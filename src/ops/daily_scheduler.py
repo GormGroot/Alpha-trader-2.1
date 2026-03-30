@@ -861,7 +861,8 @@ class DailyScheduler:
 
     def get_results(self, limit: int = 50) -> list[TaskResult]:
         with self._lock:
-            return list(self._results[-limit:])
+            results_list = list(self._results)
+            return results_list[-limit:]
 
     def run_task_now(self, task_name: str) -> TaskResult | None:
         for task in self._tasks:
