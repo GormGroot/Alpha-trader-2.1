@@ -1,0 +1,46 @@
+═════════════════════════════════════════════════════════════════
+  SKATTEINDBERETNING – VEJLEDENDE BEREGNING
+═════════════════════════════════════════════════════════════════
+  Skatteår:               2025
+  Genereret:              2026-03-16T20:22:34.052109
+
+  ⚠️  DISCLAIMER: Denne beregning er kun vejledende og
+     erstatter ikke professionel rådgivning fra revisor.
+
+─────────────────────────────────────────────────────────────────
+  HANDLER
+─────────────────────────────────────────────────────────────────
+  Antal handler:          6
+  Samlede gevinster:           +8,922.17 DKK
+  Samlede tab:                     +0.00 DKK
+  Netto gevinst/tab:           +8,922.17 DKK
+
+─────────────────────────────────────────────────────────────────
+  GEVINST/TAB PER AKTIE
+─────────────────────────────────────────────────────────────────
+  Aktie       Handler        Gevinst            Tab          Netto
+  AAPL              2      +1,615.73          +0.00      +1,615.73
+  GOOGL             1      +3,983.41          +0.00      +3,983.41
+  MSFT              3      +3,323.03          +0.00      +3,323.03
+
+─────────────────────────────────────────────────────────────────
+  SKATTEBEREGNING (AKTIEINDKOMST)
+─────────────────────────────────────────────────────────────────
+  Skattepligtig gevinst:        8,922.17 DKK
+  Progressionsgrænse:             61,000 DKK
+
+  27% af beløb under grænsen:    2,408.99 DKK
+  42% af beløb over grænsen:         0.00 DKK
+  ────────────────────────────────────────
+  Estimeret skat i alt:          2,408.99 DKK
+
+─────────────────────────────────────────────────────────────────
+  RUBRIKKER TIL ÅRSOPGØRELSEN
+─────────────────────────────────────────────────────────────────
+  Rubrik 66 (aktieindkomst – gevinst):      8,922.17 DKK
+  Rubrik 67 (aktieindkomst – tab):               0.00 DKK
+  Rubrik 68 (udenlandsk udbytte):                0.00 DKK
+
+═════════════════════════════════════════════════════════════════
+  ⚠️  Husk: Verificér altid med revisor inden indberetning.
+═════════════════════════════════════════════════════════════════

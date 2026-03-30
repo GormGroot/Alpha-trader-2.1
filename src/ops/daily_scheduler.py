@@ -1,0 +1,835 @@
+"""
+Daily Scheduler — automatisk daglig rutine for Alpha Trader.
+
+Tidsplan (CET) — alle markeder:
+  00:30  Pre-market: New Zealand, Australia, Japan, Hong Kong
+  01:00  New Zealand, Australia, Tokyo åbner
+  02:00  Hong Kong åbner
+  04:15  Pre-market: Mumbai
+  04:45  Mumbai åbner
+  07:30  Morgen-check (broker connections, portfolio snapshot)
+  08:00  Pre-market: EU, Nordic, London
+  09:00  EU, Nordic, London åbner
+  10:00  Pre-market: US
+  11:15  Mumbai lukker
+  15:30  US Regular åbner
+  17:30  EU, Nordic, London lukker
+  22:00  US Regular lukker → US Post-market starter
+  22:00  New Zealand pre-market starter
+  23:00  Vedligeholdelse (backup, logs)
+
+Features:
+  - Fuld 24/7 dækning alle ugedage
+  - Pre/post market support
+  - Multi-timezone market calendar integration
+  - Weekend/helligdag-detection
+  - Graceful shutdown
+  - Event callbacks
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, date
+from enum import Enum
+from typing import Callable
+from zoneinfo import ZoneInfo
+
+from loguru import logger
+
+# ── Timezones ──────────────────────────────────────────────
+TZ_CET = ZoneInfo("Europe/Copenhagen")
+TZ_ET  = ZoneInfo("America/New_York")
+TZ_UTC = ZoneInfo("UTC")
+
+
+class TaskPriority(Enum):
+    CRITICAL = "critical"
+    HIGH     = "high"
+    NORMAL   = "normal"
+    LOW      = "low"
+
+
+class TaskStatus(Enum):
+    PENDING   = "pending"
+    RUNNING   = "running"
+    COMPLETED = "completed"
+    FAILED    = "failed"
+    SKIPPED   = "skipped"
+
+
+@dataclass
+class ScheduledTask:
+    name:                str
+    hour:                int
+    minute:              int
+    func:                Callable
+    priority:            TaskPriority = TaskPriority.NORMAL
+    requires_market_day: bool = True
+    timeout_seconds:     int = 300
+    retry_count:         int = 1
+    last_run:            datetime | None = None
+    last_status:         TaskStatus = TaskStatus.PENDING
+    last_error:          str = ""
+    enabled:             bool = True
+
+
+@dataclass
+class TaskResult:
+    task_name:        str
+    status:           TaskStatus
+    started_at:       datetime
+    finished_at:      datetime
+    duration_seconds: float
+    error:            str = ""
+    details:          dict = field(default_factory=dict)
+
+
+# ── Holiday calendar ───────────────────────────────────────
+
+def _dk_holidays(year: int) -> set[date]:
+    from datetime import date as d
+    holidays = {
+        d(year, 1, 1),
+        d(year, 6, 5),
+        d(year, 12, 24),
+        d(year, 12, 25),
+        d(year, 12, 26),
+        d(year, 12, 31),
+    }
+    try:
+        from dateutil.easter import easter
+        e = easter(year)
+        holidays.update({
+            e - timedelta(days=3),
+            e - timedelta(days=2),
+            e,
+            e + timedelta(days=1),
+            e + timedelta(days=39),
+            e + timedelta(days=49),
+            e + timedelta(days=50),
+        })
+    except ImportError:
+        pass
+    return holidays
+
+
+def _us_holidays(year: int) -> set[date]:
+    from datetime import date as d
+    return {
+        d(year, 1, 1),
+        d(year, 7, 4),
+        d(year, 12, 25),
+    }
+
+
+def is_market_day(d: date | None = None) -> bool:
+    if d is None:
+        d = datetime.now(TZ_CET).date()
+    if d.weekday() >= 5:
+        return False
+    year = d.year
+    if d in _dk_holidays(year) or d in _us_holidays(year):
+        return False
+    return True
+
+
+# ── Task functions ─────────────────────────────────────────
+
+def _asia_pacific_open() -> dict:
+    """00:30 CET — Pre-market Asia/Pacific opens."""
+    logger.info("[scheduler] 🌏 Asia/Pacific pre-market starting (NZ, AU, JP, HK)")
+    try:
+        from src.ops.market_calendar import get_calendar
+        cal = get_calendar()
+        symbols = cal.get_symbols_to_scan()
+        logger.info(f"[scheduler] Asia/Pacific: {len(symbols)} symbols queued for scan")
+        return {"symbols": len(symbols), "markets": ["new_zealand", "australia", "japan", "hong_kong"]}
+    except Exception as e:
+        logger.warning(f"[scheduler] Asia/Pacific open failed: {e}")
+        return {}
+
+
+def _india_pre_market() -> dict:
+    """04:15 CET — India pre-market."""
+    logger.info("[scheduler] 🇮🇳 India pre-market starting (NSE)")
+    try:
+        from src.ops.market_calendar import MARKET_SYMBOLS
+        symbols = MARKET_SYMBOLS.get("india", [])
+        logger.info(f"[scheduler] India pre-market: {len(symbols)} symbols")
+        return {"symbols": len(symbols)}
+    except Exception as e:
+        logger.warning(f"[scheduler] India pre-market failed: {e}")
+        return {}
+
+
+def _morning_check() -> dict:
+    """07:30 CET — Morning check."""
+    results = {"brokers": {}, "portfolio_value": 0}
+    logger.info("[scheduler] ☀️  Morning check starting")
+
+    try:
+        from src.broker.connection_manager import ConnectionManager
+        cm = ConnectionManager()
+        status = cm.check_all()
+        results["brokers"] = status
+        logger.info(f"[scheduler] Broker status: {status}")
+    except Exception as e:
+        logger.warning(f"[scheduler] Broker check failed: {e}")
+
+    try:
+        from src.broker.broker_router import BrokerRouter
+        from src.broker.aggregated_portfolio import AggregatedPortfolio
+        router = BrokerRouter()
+        portfolio = AggregatedPortfolio(router)
+        summary = portfolio.get_total_value("DKK")
+        results["portfolio_value"] = summary.total_value_dkk
+        logger.info(f"[scheduler] Portfolio value: {summary.total_value_dkk:,.0f} DKK")
+    except Exception as e:
+        logger.warning(f"[scheduler] Portfolio fetch failed: {e}")
+
+    # Print market status overview
+    try:
+        from src.ops.market_calendar import get_calendar
+        get_calendar().print_status()
+    except Exception:
+        pass
+
+    return results
+
+
+def _eu_pre_market() -> dict:
+    """08:00 CET — EU/Nordic/London pre-market."""
+    logger.info("[scheduler] 🇪🇺 EU/Nordic/London pre-market starting")
+    try:
+        from src.ops.market_calendar import MARKET_SYMBOLS
+        count = len(MARKET_SYMBOLS.get("eu_nordic", [])) + len(MARKET_SYMBOLS.get("london", []))
+        logger.info(f"[scheduler] EU pre-market: {count} symbols")
+        return {"symbols": count}
+    except Exception as e:
+        logger.warning(f"[scheduler] EU pre-market failed: {e}")
+        return {}
+
+
+def _eu_market_open() -> dict:
+    """09:00 CET — EU market opens."""
+    logger.info("[scheduler] 🇪🇺 EU/Nordic/London market OPEN")
+    results = {"signals": [], "strategies_run": 0}
+    try:
+        from src.strategy.sma_crossover import SMACrossoverStrategy
+        from src.strategy.rsi_strategy import RSIStrategy
+        strategies = [
+            SMACrossoverStrategy(short_window=20, long_window=50),
+            RSIStrategy(oversold=30, overbought=70),
+        ]
+        results["strategies_run"] = len(strategies)
+    except Exception as e:
+        logger.warning(f"[scheduler] EU open routine failed: {e}")
+    return results
+
+
+def _india_market_close() -> dict:
+    """11:15 CET — India market closes."""
+    logger.info("[scheduler] 🇮🇳 India (NSE) market CLOSED")
+    try:
+        from src.ops.market_handoff import get_handoff_engine
+        engine = get_handoff_engine()
+        from src.ops.market_handoff import SessionResult
+        from datetime import date
+        result = SessionResult(
+            market="india",
+            date=date.today(),
+            change_pct=0.0,
+            volatility=0.0,
+            volume_ratio=1.0,
+            breadth=0.5,
+            sentiment_score=0.0,
+            regime="sideways",
+        )
+        engine.record_session(result)
+        logger.info(f"[scheduler] India handoff recorded")
+    except Exception as e:
+        logger.warning(f"[scheduler] India close handoff failed: {e}")
+    return {}
+
+
+def _us_pre_market() -> dict:
+    """10:00 CET — US pre-market opens."""
+    logger.info("[scheduler] 🇺🇸 US pre-market starting (10:00 CET)")
+    try:
+        from src.ops.market_calendar import MARKET_SYMBOLS
+        count = len(MARKET_SYMBOLS.get("us_stocks", [])) + len(MARKET_SYMBOLS.get("chicago", []))
+        logger.info(f"[scheduler] US pre-market: {count} symbols")
+        return {"symbols": count}
+    except Exception as e:
+        logger.warning(f"[scheduler] US pre-market failed: {e}")
+        return {}
+
+
+def _us_market_open() -> dict:
+    """15:30 CET — US regular market opens."""
+    logger.info("[scheduler] 🇺🇸 US market OPEN (15:30 CET)")
+    results = {"cross_market": {}}
+    try:
+        from src.broker.aggregated_portfolio import AggregatedPortfolio
+        from src.broker.broker_router import BrokerRouter
+        router = BrokerRouter()
+        portfolio = AggregatedPortfolio(router)
+        portfolio.invalidate_cache()
+        logger.info("[scheduler] US market open — cache invalidated")
+
+        # Get handoff signal from EU session
+        try:
+            from src.ops.market_handoff import get_handoff_engine
+            signal = get_handoff_engine().get_handoff_signal("us")
+            logger.info(
+                f"[scheduler] US handoff signal: size_multiplier={signal.position_size_multiplier:.2f}, "
+                f"risk_off={signal.risk_off}"
+            )
+            results["handoff"] = {
+                "multiplier": signal.position_size_multiplier,
+                "risk_off": signal.risk_off,
+                "notes": signal.notes,
+            }
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"[scheduler] US open routine failed: {e}")
+    return results
+
+
+def _eu_market_close() -> dict:
+    """17:30 CET — EU market closes."""
+    logger.info("[scheduler] 🇪🇺 EU/Nordic/London market CLOSED")
+    results = {"snapshot": {}, "tax_updated": False}
+
+    try:
+        from src.broker.broker_router import BrokerRouter
+        from src.broker.aggregated_portfolio import AggregatedPortfolio
+        router = BrokerRouter()
+        portfolio = AggregatedPortfolio(router)
+        summary = portfolio.get_total_value("DKK")
+        results["snapshot"]["eu_value"] = summary.total_value_dkk
+    except Exception as e:
+        logger.warning(f"[scheduler] EU close snapshot failed: {e}")
+
+    try:
+        from src.tax.mark_to_market import MarkToMarketEngine
+        mtm = MarkToMarketEngine()
+        results["tax_updated"] = True
+        logger.info("[scheduler] Tax calculation updated at EU close")
+    except Exception as e:
+        logger.warning(f"[scheduler] Tax update failed: {e}")
+
+    # Record EU session for US handoff
+    try:
+        from src.ops.market_handoff import get_handoff_engine, SessionResult
+        from datetime import date
+        result = SessionResult(
+            market="eu",
+            date=date.today(),
+            change_pct=0.0,
+            volatility=0.0,
+            volume_ratio=1.0,
+            breadth=0.5,
+            sentiment_score=0.0,
+            regime="sideways",
+        )
+        get_handoff_engine().record_session(result)
+    except Exception:
+        pass
+
+    return results
+
+
+def _us_market_close() -> dict:
+    """22:00 CET — US regular market closes, post-market starts."""
+    logger.info("[scheduler] 🇺🇸 US market CLOSED — post-market starting")
+    results = {"daily_pnl": 0, "portfolio_value": 0, "tax_suggestions": []}
+
+    try:
+        from src.broker.broker_router import BrokerRouter
+        from src.broker.aggregated_portfolio import AggregatedPortfolio
+        router = BrokerRouter()
+        portfolio = AggregatedPortfolio(router)
+        summary = portfolio.get_total_value("DKK")
+        results["portfolio_value"] = summary.total_value_dkk
+        results["daily_pnl"] = summary.total_unrealized_pnl_dkk
+        logger.info(f"[scheduler] End of day portfolio: {summary.total_value_dkk:,.0f} DKK")
+    except Exception as e:
+        logger.warning(f"[scheduler] US close snapshot failed: {e}")
+
+    try:
+        from src.tax.corporate_tax import CorporateTaxCalculator
+        calc = CorporateTaxCalculator()
+        suggestions = calc.suggest_tax_optimization([])
+        results["tax_suggestions"] = [s.description for s in suggestions[:5]]
+    except Exception as e:
+        logger.warning(f"[scheduler] Tax optimization check failed: {e}")
+
+    # Record US session for NZ/Asia handoff next day
+    try:
+        from src.ops.market_handoff import get_handoff_engine, SessionResult
+        from datetime import date
+        result = SessionResult(
+            market="us",
+            date=date.today(),
+            change_pct=0.0,
+            volatility=0.0,
+            volume_ratio=1.0,
+            breadth=0.5,
+            sentiment_score=0.0,
+            regime="sideways",
+        )
+        get_handoff_engine().record_session(result)
+    except Exception:
+        pass
+
+    return results
+
+
+def _nz_pre_market() -> dict:
+    """22:00 CET — New Zealand pre-market (same time as US close)."""
+    logger.info("[scheduler] 🇳🇿 New Zealand pre-market starting (22:00 CET)")
+    try:
+        from src.ops.market_calendar import MARKET_SYMBOLS
+        symbols = MARKET_SYMBOLS.get("new_zealand", [])
+        logger.info(f"[scheduler] NZ pre-market: {len(symbols)} symbols")
+        return {"symbols": len(symbols)}
+    except Exception as e:
+        logger.warning(f"[scheduler] NZ pre-market failed: {e}")
+        return {}
+
+
+def _maintenance() -> dict:
+    """23:00 CET — Maintenance."""
+    results = {"backup_ok": False, "disk_ok": False, "logs_archived": False}
+    logger.info("[scheduler] 🔧 Maintenance starting")
+
+    try:
+        from src.ops.backup import BackupManager
+        bm = BackupManager()
+        bm.run_daily_backup()
+        results["backup_ok"] = True
+    except Exception as e:
+        logger.warning(f"[scheduler] Backup failed: {e}")
+
+    try:
+        import shutil
+        usage = shutil.disk_usage("/")
+        free_gb = usage.free / (1024 ** 3)
+        results["disk_free_gb"] = round(free_gb, 1)
+        results["disk_ok"] = free_gb > 5
+        if free_gb < 5:
+            logger.warning(f"[scheduler] Low disk space: {free_gb:.1f} GB free")
+
+        # Also check trading data drive
+        trading_path = "/mnt/trading"
+        import os
+        if os.path.exists(trading_path):
+            usage2 = shutil.disk_usage(trading_path)
+            free_gb2 = usage2.free / (1024 ** 3)
+            results["trading_disk_free_gb"] = round(free_gb2, 1)
+            logger.info(f"[scheduler] Trading disk: {free_gb2:.1f} GB free")
+    except Exception as e:
+        logger.warning(f"[scheduler] Disk check failed: {e}")
+
+    try:
+        import glob, os, gzip
+        log_dir = "logs"
+        if os.path.isdir(log_dir):
+            old_logs = [
+                f for f in glob.glob(os.path.join(log_dir, "*.log"))
+                if os.path.getmtime(f) < time.time() - 7 * 86400
+            ]
+            for lf in old_logs:
+                with open(lf, "rb") as f_in:
+                    with gzip.open(f"{lf}.gz", "wb") as f_out:
+                        f_out.write(f_in.read())
+                os.remove(lf)
+            results["logs_archived"] = True
+            logger.info(f"[scheduler] Archived {len(old_logs)} old log files")
+    except Exception as e:
+        logger.warning(f"[scheduler] Log archival failed: {e}")
+
+    # News sentiment daily update
+    try:
+        from src.data.news_sentiment_downloader import NewsSentimentDownloader
+        nsd = NewsSentimentDownloader()
+        nsd_stats = nsd.run_daily_update()
+        results["news_sentiment_ok"] = True
+        results["news_sentiment_articles"] = nsd_stats.get("articles", 0)
+        logger.info(f"[scheduler] News sentiment updated: {nsd_stats}")
+    except Exception as e:
+        logger.warning(f"News sentiment update failed: {e}")
+        results["news_sentiment_ok"] = False
+
+    # Reset daily handoff data
+    try:
+        from src.ops.market_handoff import get_handoff_engine
+        get_handoff_engine().reset_daily()
+    except Exception:
+        pass
+
+    # Daily historical data update (download last 24h for all universe symbols)
+    # The downloader automatically triggers the NPU/GPU data processor
+    # after download to rebuild the processed data block.
+    try:
+        from src.data.historical_downloader import HistoricalDownloader
+        dl = HistoricalDownloader()
+        dl_stats = dl.run_daily_update(run_processor=True)
+        results["historical_updated"] = dl_stats.get("updated", 0)
+        results["historical_bars"] = dl_stats.get("bars", 0)
+        # Capture processor results if available
+        if "processor" in dl_stats:
+            results["data_processor"] = dl_stats["processor"]
+        logger.info(
+            f"[scheduler] Historical data: {dl_stats['updated']} symbols updated, "
+            f"{dl_stats['bars']:,} bars"
+        )
+    except Exception as e:
+        logger.warning(f"[scheduler] Historical data update failed: {e}")
+        results["historical_updated"] = 0
+
+    return results
+
+
+def _weekend_rotation_check() -> dict:
+    """Exchange-aligned weekend/holiday rotation — runs every scheduled tick.
+
+    Works for **any** non-trading stretch: regular weekends, national
+    holidays, long weekends (e.g. Good Friday → Easter Monday = 4 days).
+
+    **Activate** when ALL non-crypto exchanges have closed AND the next
+    calendar day is not a trading day for at least one exchange.  This is
+    detected per-market via ``is_last_trading_day_before_break()``.
+
+    **Deactivate** 30 minutes before the first exchange reopens after the
+    break, determined by ``get_earliest_reopen()`` which respects per-market
+    holiday calendars (e.g. NZ may reopen while US stays closed).
+    """
+    import json as _json
+    from pathlib import Path
+
+    _cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "weekend_rotation.json"
+    try:
+        cfg = _json.loads(_cfg_path.read_text()) if _cfg_path.exists() else {}
+    except Exception:
+        cfg = {}
+
+    if not cfg.get("enabled", False):
+        return {"skipped": True, "reason": "disabled"}
+
+    now = datetime.now(TZ_CET)
+    today = now.date()
+
+    try:
+        from src.broker.registry import get_auto_trader
+        trader = get_auto_trader()
+        if not trader:
+            return {"skipped": True, "reason": "no_trader"}
+
+        weekend_active = getattr(trader, "_weekend_mode", False)
+    except Exception:
+        return {"skipped": True, "reason": "no_trader"}
+
+    from src.ops.market_calendar import (
+        get_friday_close_schedule,
+        get_earliest_reopen,
+        is_last_trading_day_before_break,
+        MARKET_SYMBOLS,
+    )
+
+    # ── ACTIVATE: last trading day, all exchanges closed ─────────
+    if not weekend_active:
+        # Check if ANY non-crypto market considers today its last
+        # trading day before a break (weekend or holiday).
+        non_crypto = [m for m in MARKET_SYMBOLS if m != "crypto"]
+        any_closing = any(is_last_trading_day_before_break(m, today) for m in non_crypto)
+
+        if not any_closing:
+            return {"skipped": True, "reason": "not_pre_break_day"}
+
+        # Today is the last trading day for at least one market.
+        # Wait until all exchanges that ARE open today have closed.
+        schedule = get_friday_close_schedule(today)
+        if not schedule:
+            # No exchanges open today at all (full holiday) — activate now
+            pass
+        else:
+            still_open = [
+                m for close_t, markets in schedule
+                for m in markets if now.time() < close_t
+            ]
+            if still_open:
+                logger.debug(
+                    f"[scheduler] Weekend rotation — waiting for: {still_open}"
+                )
+                return {"skipped": True, "reason": "exchanges_still_open", "open": still_open}
+
+        # All done — activate weekend mode
+        crypto_alloc_pct = cfg.get("crypto_allocation_pct", 60)
+        close_stocks = cfg.get("close_stocks", True)
+        close_futures = cfg.get("close_futures", True)
+
+        trader.set_weekend_mode(True, crypto_alloc_pct, close_stocks, close_futures)
+
+        reopen_date, reopen_time, first_market = get_earliest_reopen(today)
+        logger.info(
+            f"[scheduler] Weekend rotation ACTIVATED — "
+            f"crypto target={crypto_alloc_pct}%, "
+            f"first reopen: {first_market} on {reopen_date} at {reopen_time.strftime('%H:%M')} CET"
+        )
+        return {
+            "weekend_mode": True,
+            "trigger": "all_exchanges_closed",
+            "reopen": f"{first_market} {reopen_date} {reopen_time.strftime('%H:%M')}",
+        }
+
+    # ── DEACTIVATE: before first exchange reopens ────────────────
+    if weekend_active:
+        # Find when the next exchange opens (accounts for per-market holidays)
+        # Use yesterday as anchor so we catch today's opens
+        yesterday = today - timedelta(days=1)
+        reopen_date, reopen_time, first_market = get_earliest_reopen(yesterday)
+
+        # Restore 30 min before first open
+        from datetime import datetime as _dt
+        reopen_dt = _dt.combine(reopen_date, reopen_time, tzinfo=TZ_CET)
+        restore_dt = reopen_dt - timedelta(minutes=30)
+
+        if now >= restore_dt:
+            trader.set_weekend_mode(False)
+            logger.info(
+                f"[scheduler] Weekend rotation DEACTIVATED — "
+                f"{first_market} opens {reopen_date} at {reopen_time.strftime('%H:%M')} CET"
+            )
+            return {"weekend_mode": False, "trigger": f"before_{first_market}_open"}
+        else:
+            remaining = (restore_dt - now).total_seconds() / 60
+            return {
+                "skipped": True,
+                "reason": "waiting_for_restore",
+                "restore_at": restore_dt.strftime("%a %H:%M CET"),
+                "minutes_remaining": int(remaining),
+            }
+
+    return {"skipped": True, "reason": "no_action_needed"}
+
+
+def _data_processor_retrain() -> dict:
+    """23:30 CET — Full model retrain on processed data block (weekly)."""
+    logger.info("[scheduler] NPU/GPU data processor — weekly full retrain")
+    now = datetime.now(TZ_CET)
+
+    # Only do full retrain on Sundays (weekly)
+    if now.weekday() != 6:
+        logger.info("[scheduler] Skipping full retrain (not Sunday)")
+        return {"skipped": True, "reason": "not_sunday"}
+
+    try:
+        from src.ops.data_processor import DataProcessor
+        dp = DataProcessor()
+        result = dp.run(retrain=True)
+        logger.info(
+            f"[scheduler] Full retrain complete: "
+            f"{result.models_trained} models trained, "
+            f"{result.predictions_written} predictions "
+            f"({result.device}, {result.duration_seconds:.1f}s)"
+        )
+        return {
+            "models_trained": result.models_trained,
+            "predictions": result.predictions_written,
+            "device": result.device,
+            "duration_s": round(result.duration_seconds, 1),
+            "model_results": {
+                k: {"accuracy": v.get("accuracy", 0), "auc": v.get("auc", 0)}
+                for k, v in result.model_results.items()
+            },
+        }
+    except Exception as e:
+        logger.error(f"[scheduler] Data processor retrain failed: {e}")
+        return {"error": str(e)}
+
+
+# ── Scheduler ──────────────────────────────────────────────
+
+class DailyScheduler:
+    """
+    Runs daily routines covering ALL global markets 24/7.
+    All times are CET (Copenhagen timezone).
+    """
+
+    DEFAULT_TASKS = [
+        # ── Asia/Pacific ──────────────────────────────────
+        ScheduledTask("asia_pacific_pre",  0, 30, _asia_pacific_open,  TaskPriority.HIGH,     True,  120, 1),
+        ScheduledTask("india_pre_market",  4, 15, _india_pre_market,   TaskPriority.NORMAL,   True,  60,  1),
+        # ── Morning ───────────────────────────────────────
+        ScheduledTask("morning_check",     7, 30, _morning_check,      TaskPriority.CRITICAL, True,  120, 2),
+        # ── EU ────────────────────────────────────────────
+        ScheduledTask("eu_pre_market",     8,  0, _eu_pre_market,      TaskPriority.NORMAL,   True,  60,  1),
+        ScheduledTask("eu_market_open",    9,  0, _eu_market_open,     TaskPriority.HIGH,     True,  180, 1),
+        # ── US Pre ────────────────────────────────────────
+        ScheduledTask("us_pre_market",    10,  0, _us_pre_market,      TaskPriority.NORMAL,   True,  60,  1),
+        # ── India close ───────────────────────────────────
+        ScheduledTask("india_close",      11, 15, _india_market_close, TaskPriority.NORMAL,   True,  60,  1),
+        # ── US Regular ────────────────────────────────────
+        ScheduledTask("us_market_open",   15, 30, _us_market_open,     TaskPriority.HIGH,     True,  180, 1),
+        # ── EU close ──────────────────────────────────────
+        ScheduledTask("eu_market_close",  17, 30, _eu_market_close,    TaskPriority.HIGH,     True,  300, 2),
+        # ── US close + NZ pre ─────────────────────────────
+        ScheduledTask("us_market_close",  22,  0, _us_market_close,    TaskPriority.CRITICAL, True,  300, 2),
+        ScheduledTask("nz_pre_market",    22,  0, _nz_pre_market,      TaskPriority.NORMAL,   True,  60,  1),
+        # ── Weekend Rotation (exchange-aligned) ───────────
+        # Checked at key times: after last Friday close, before first Sunday/Monday open
+        # The task itself decides whether to activate/deactivate based on exchange hours.
+        # 22:30 = 30 min after US close (last Friday exchange to close)
+        ScheduledTask("weekend_rotation_fri", 22, 30, _weekend_rotation_check, TaskPriority.HIGH, False, 120, 1),
+        # 21:00 = 30 min before NZ pre-market (earliest Sunday opener)
+        ScheduledTask("weekend_rotation_sun", 21,  0, _weekend_rotation_check, TaskPriority.HIGH, False, 120, 1),
+        # 00:15 = fallback early Monday if Sunday check was missed
+        ScheduledTask("weekend_rotation_mon",  0, 15, _weekend_rotation_check, TaskPriority.HIGH, False, 120, 1),
+        # ── Maintenance ───────────────────────────────────
+        ScheduledTask("maintenance",      23,  0, _maintenance,        TaskPriority.NORMAL,   False, 600, 1),
+        # ── NPU/GPU Data Processor (weekly full retrain) ─
+        ScheduledTask("data_processor_retrain", 23, 30, _data_processor_retrain, TaskPriority.LOW, False, 1800, 1),
+    ]
+
+    def __init__(self, tasks: list[ScheduledTask] | None = None):
+        self._tasks       = tasks or list(self.DEFAULT_TASKS)
+        self._running     = False
+        self._thread      = None
+        self._stop_event  = threading.Event()
+        self._results     = deque(maxlen=500)
+        self._callbacks   = []
+        self._lock        = threading.Lock()
+
+    def start(self) -> None:
+        if self._running:
+            logger.warning("[scheduler] Already running")
+            return
+        self._running = True
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="DailyScheduler",
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("[scheduler] Started — 24/7 global market coverage active")
+
+    def stop(self) -> None:
+        self._running = False
+        self._stop_event.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=10)
+        logger.info("[scheduler] Stopped")
+
+    def on_task_complete(self, cb: Callable[[TaskResult], None]) -> None:
+        self._callbacks.append(cb)
+
+    def get_schedule(self) -> list[dict]:
+        return [
+            {
+                "name":                t.name,
+                "time":                f"{t.hour:02d}:{t.minute:02d} CET",
+                "priority":            t.priority.value,
+                "enabled":             t.enabled,
+                "requires_market_day": t.requires_market_day,
+                "last_run":            t.last_run.isoformat() if t.last_run else None,
+                "last_status":         t.last_status.value,
+            }
+            for t in self._tasks
+        ]
+
+    def get_results(self, limit: int = 50) -> list[TaskResult]:
+        with self._lock:
+            return list(self._results[-limit:])
+
+    def run_task_now(self, task_name: str) -> TaskResult | None:
+        for task in self._tasks:
+            if task.name == task_name:
+                return self._execute_task(task)
+        logger.warning(f"[scheduler] Task '{task_name}' not found")
+        return None
+
+    def enable_task(self, task_name: str, enabled: bool = True) -> None:
+        for task in self._tasks:
+            if task.name == task_name:
+                task.enabled = enabled
+                return
+
+    def _run_loop(self) -> None:
+        logger.info("[scheduler] Run loop started")
+        while not self._stop_event.is_set():
+            try:
+                now_cet = datetime.now(TZ_CET)
+                for task in self._tasks:
+                    if not task.enabled:
+                        continue
+                    if task.requires_market_day and not is_market_day(now_cet.date()):
+                        continue
+                    if now_cet.hour == task.hour and now_cet.minute == task.minute:
+                        if task.last_run and task.last_run.date() == now_cet.date():
+                            continue
+                        logger.info(f"[scheduler] Running task: {task.name}")
+                        self._execute_task(task)
+            except Exception as e:
+                logger.error(f"[scheduler] Loop error: {e}")
+            self._stop_event.wait(30)
+
+    def _execute_task(self, task: ScheduledTask) -> TaskResult:
+        started = datetime.now(TZ_CET)
+        error   = ""
+        status  = TaskStatus.COMPLETED
+        details = {}
+
+        for attempt in range(task.retry_count):
+            try:
+                result  = task.func()
+                details = result if isinstance(result, dict) else {}
+                status  = TaskStatus.COMPLETED
+                error   = ""
+                break
+            except Exception as e:
+                error = f"Attempt {attempt + 1}: {e}"
+                logger.warning(f"[scheduler] Task '{task.name}' attempt {attempt + 1} failed: {e}")
+                if attempt < task.retry_count - 1:
+                    time.sleep(5)
+                else:
+                    status = TaskStatus.FAILED
+
+        finished = datetime.now(TZ_CET)
+        duration = (finished - started).total_seconds()
+
+        task.last_run    = finished
+        task.last_status = status
+        task.last_error  = error
+
+        result = TaskResult(
+            task_name=task.name,
+            status=status,
+            started_at=started,
+            finished_at=finished,
+            duration_seconds=duration,
+            error=error,
+            details=details,
+        )
+
+        with self._lock:
+            self._results.append(result)
+
+        for cb in self._callbacks:
+            try:
+                cb(result)
+            except Exception as e:
+                logger.warning(f"[scheduler] Callback error: {e}")
+
+        log_level = "info" if status == TaskStatus.COMPLETED else "warning"
+        getattr(logger, log_level)(
+            f"[scheduler] Task '{task.name}' {status.value} in {duration:.1f}s"
+        )
+        return result

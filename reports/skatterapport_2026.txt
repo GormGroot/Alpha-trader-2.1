@@ -1,0 +1,38 @@
+═════════════════════════════════════════════════════════════════
+  SKATTEINDBERETNING – VEJLEDENDE BEREGNING
+═════════════════════════════════════════════════════════════════
+  Skatteår:               2026
+  Genereret:              2026-03-16T20:22:04.473413
+
+  ⚠️  DISCLAIMER: Denne beregning er kun vejledende og
+     erstatter ikke professionel rådgivning fra revisor.
+
+─────────────────────────────────────────────────────────────────
+  HANDLER
+─────────────────────────────────────────────────────────────────
+  Antal handler:          0
+  Samlede gevinster:               +0.00 DKK
+  Samlede tab:                     +0.00 DKK
+  Netto gevinst/tab:               +0.00 DKK
+
+─────────────────────────────────────────────────────────────────
+  SKATTEBEREGNING (AKTIEINDKOMST)
+─────────────────────────────────────────────────────────────────
+  Skattepligtig gevinst:            0.00 DKK
+  Progressionsgrænse:             61,000 DKK
+
+  27% af beløb under grænsen:        0.00 DKK
+  42% af beløb over grænsen:         0.00 DKK
+  ────────────────────────────────────────
+  Estimeret skat i alt:              0.00 DKK
+
+─────────────────────────────────────────────────────────────────
+  RUBRIKKER TIL ÅRSOPGØRELSEN
+─────────────────────────────────────────────────────────────────
+  Rubrik 66 (aktieindkomst – gevinst):          0.00 DKK
+  Rubrik 67 (aktieindkomst – tab):               0.00 DKK
+  Rubrik 68 (udenlandsk udbytte):                0.00 DKK
+
+═════════════════════════════════════════════════════════════════
+  ⚠️  Husk: Verificér altid med revisor inden indberetning.
+═════════════════════════════════════════════════════════════════

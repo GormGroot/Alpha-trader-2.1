@@ -1,0 +1,486 @@
+# ============================================================
+# Alpha Trading Platform – Default Configuration
+# ============================================================
+# Alle værdier her kan overskrives via .env eller settings.py.
+# API-nøgler må ALDRIG stå i denne fil – brug .env.
+
+# --- Mægler --------------------------------------------------
+broker:
+  provider: paper                    # paper | alpaca (paper = lokal simulator, ingen API nødvendig)
+  base_url: https://paper-api.alpaca.markets
+  api_version: v2
+
+# --- Markedsdata ----------------------------------------------
+market_data:
+  provider: yfinance            # yfinance | alpha_vantage
+  interval: 5m                  # 1m, 5m, 15m, 1h, 1d
+  lookback_days: 365
+  cache_enabled: true
+  cache_dir: data_cache
+
+# --- Univers (hvilke aktier der handles) ----------------------
+trading:
+  symbols:
+    # ── US Large Cap (S&P 500 / NASDAQ) ──────────────────────
+    - AAPL       # Apple
+    - MSFT       # Microsoft
+    - GOOGL      # Alphabet
+    - AMZN       # Amazon
+    - NVDA       # NVIDIA
+    - META       # Meta
+    - TSLA       # Tesla
+    - BRK-B      # Berkshire Hathaway
+    - JPM        # JPMorgan Chase
+    - V          # Visa
+    - UNH        # UnitedHealth
+    - JNJ        # Johnson & Johnson
+    - XOM        # ExxonMobil
+    - PG         # Procter & Gamble
+    - MA         # Mastercard
+    - HD         # Home Depot
+    - CVX        # Chevron
+    - MRK        # Merck
+    - ABBV       # AbbVie
+    - PEP        # PepsiCo
+    - KO         # Coca-Cola
+    - AVGO       # Broadcom
+    - COST       # Costco
+    - WMT        # Walmart
+    - BAC        # Bank of America
+    - DIS        # Disney
+    - CSCO       # Cisco
+    - ADBE       # Adobe
+    - CRM        # Salesforce
+    - AMD        # Advanced Micro Devices
+    - INTC       # Intel
+    - NFLX       # Netflix
+    - QCOM       # Qualcomm
+    - TXN        # Texas Instruments
+    - IBM        # IBM
+    - GE         # GE Aerospace
+    - CAT        # Caterpillar
+    - BA         # Boeing
+    - GS         # Goldman Sachs
+    - MS         # Morgan Stanley
+    - C          # Citigroup
+    - WFC        # Wells Fargo
+    - AXP        # American Express
+    - LMT        # Lockheed Martin
+    - RTX        # Raytheon
+    - UPS        # UPS
+    - FDX        # FedEx
+    - MCD        # McDonald's
+    - SBUX       # Starbucks
+    - NKE        # Nike
+    - PFE        # Pfizer
+    - TMO        # Thermo Fisher
+    - ABT        # Abbott
+    - MDT        # Medtronic
+    - AMGN       # Amgen
+    - GILD       # Gilead Sciences
+    - BMY        # Bristol-Myers Squibb
+
+    # ── Chicago Futures & Commodities (CME/CBOT via yfinance) ─
+    - GC=F       # Gold Futures
+    - SI=F       # Silver Futures
+    - CL=F       # Crude Oil (WTI) Futures
+    - BZ=F       # Brent Crude Futures
+    - NG=F       # Natural Gas Futures
+    - ZC=F       # Corn Futures (CBOT)
+    - ZW=F       # Wheat Futures (CBOT)
+    - ZS=F       # Soybean Futures (CBOT)
+    - ZL=F       # Soybean Oil Futures
+    - ZM=F       # Soybean Meal Futures
+    - HG=F       # Copper Futures
+    - PL=F       # Platinum Futures
+    - PA=F       # Palladium Futures
+    - LE=F       # Live Cattle Futures
+    - HE=F       # Lean Hogs Futures
+    - ES=F       # S&P 500 E-mini Futures
+    - NQ=F       # NASDAQ E-mini Futures
+    - YM=F       # Dow Jones E-mini Futures
+    - RTY=F      # Russell 2000 E-mini Futures
+    - ZN=F       # 10-Year Treasury Note Futures
+    - ZB=F       # 30-Year Treasury Bond Futures
+    - ZT=F       # 2-Year Treasury Futures
+    - ^VIX       # VIX Volatility Index
+
+    # ── Nordic Stocks ─────────────────────────────────────────
+    - NOVO-B.CO  # Novo Nordisk (DK)
+    - ORSTED.CO  # Ørsted (DK)
+    - MAERSK-B.CO # A.P. Møller-Mærsk (DK)
+    - DSV.CO     # DSV (DK)
+    - COLOB.CO   # Coloplast (DK)
+    - DEMANT.CO  # Demant (DK)
+    - GMAB.CO    # Genmab (DK)
+    - ROCKB.CO   # Rockwool (DK)
+    - TRYG.CO    # Tryg (DK)
+    - CARL-B.CO  # Carlsberg (DK)
+    - VOLV-B.ST  # Volvo (SE)
+    - ERIC-B.ST  # Ericsson (SE)
+    - ATCO-A.ST  # Atlas Copco (SE)
+    - SEB-A.ST   # SEB Bank (SE)
+    - SWED-A.ST  # Swedbank (SE)
+    - SAND.ST    # Sandvik (SE)
+    - SKF-B.ST   # SKF (SE)
+    - HM-B.ST    # H&M (SE)
+    - INVE-B.ST  # Investor AB (SE)
+    - ESSITY-B.ST # Essity (SE)
+    - DNB.OL     # DNB Bank (NO)
+    - EQNR.OL    # Equinor (NO)
+    - TEL.OL     # Telenor (NO)
+    - YAR.OL     # Yara International (NO)
+    - MOWI.OL    # Mowi (NO)
+    - SALM.OL    # SalMar (NO)
+    - NHY.OL     # Norsk Hydro (NO)
+    - NESTE.HE   # Neste (FI)
+    - NOKIA.HE   # Nokia (FI)
+    - SAMPO.HE   # Sampo (FI)
+    - KNEBV.HE   # Kone (FI)
+
+    # ── Mature EU Stocks ──────────────────────────────────────
+    # Germany (XETRA)
+    - SAP.DE     # SAP
+    - SIE.DE     # Siemens
+    - ALV.DE     # Allianz
+    - MUV2.DE    # Munich Re
+    - DTE.DE     # Deutsche Telekom
+    - BAYN.DE    # Bayer
+    - BMW.DE     # BMW
+    - MBG.DE     # Mercedes-Benz
+    - VOW3.DE    # Volkswagen
+    - BAS.DE     # BASF
+    - DBK.DE     # Deutsche Bank
+    - ADS.DE     # Adidas
+    - AIR.DE     # Airbus
+    - HEN3.DE    # Henkel
+    - RWE.DE     # RWE
+    # France (Euronext Paris)
+    - MC.PA      # LVMH
+    - OR.PA      # L'Oréal
+    - TTE.PA     # TotalEnergies
+    - SAN.PA     # Sanofi
+    - AIR.PA     # Airbus (Paris listing)
+    - BNP.PA     # BNP Paribas
+    - ACA.PA     # Crédit Agricole
+    - SGO.PA     # Saint-Gobain
+    - RI.PA      # Pernod Ricard
+    - KER.PA     # Kering
+    - CAP.PA     # Capgemini
+    - DSY.PA     # Dassault Systèmes
+    # Netherlands
+    - ASML.AS    # ASML
+    - PHIA.AS    # Philips
+    - HEIA.AS    # Heineken
+    - INGA.AS    # ING Group
+    - REN.AS     # Relx
+    # Switzerland
+    - NESN.SW    # Nestlé
+    - NOVN.SW    # Novartis
+    - ROG.SW     # Roche
+    - UBSG.SW    # UBS
+    - ABBN.SW    # ABB
+    - ZURN.SW    # Zurich Insurance
+    # Spain
+    - SAN.MC     # Santander
+    - BBVA.MC    # BBVA
+    - ITX.MC     # Inditex (Zara)
+    - IBE.MC     # Iberdrola
+    # Italy
+    - ENI.MI     # ENI
+    - ENEL.MI    # Enel
+    - ISP.MI     # Intesa Sanpaolo
+    - UCG.MI     # UniCredit
+    - LDO.MI     # Leonardo
+    # UK (London)
+    - SHEL.L     # Shell
+    - AZN.L      # AstraZeneca
+    - HSBA.L     # HSBC
+    - BP.L       # BP
+    - GSK.L      # GSK
+    - ULVR.L     # Unilever
+    - RIO.L      # Rio Tinto
+    - BHP.L      # BHP
+    - LSEG.L     # London Stock Exchange Group
+    - DGE.L      # Diageo
+
+    # ── Hong Kong (HKEX) ─────────────────────────────────────
+    - 0700.HK    # Tencent
+    - 9988.HK    # Alibaba
+    - 0941.HK    # China Mobile
+    - 1299.HK    # AIA Group
+    - 0005.HK    # HSBC Holdings
+    - 0939.HK    # China Construction Bank
+    - 1398.HK    # ICBC
+    - 2318.HK    # Ping An Insurance
+    - 0388.HK    # HK Exchanges
+    - 1810.HK    # Xiaomi
+    - 9999.HK    # NetEase
+    - 0011.HK    # Hang Seng Bank
+    - 0883.HK    # CNOOC
+    - 2020.HK    # ANTA Sports
+    - 9618.HK    # JD.com
+    - 3690.HK    # Meituan
+    - 0175.HK    # Geely Automobile
+    - 0002.HK    # CLP Holdings
+    - 0003.HK    # HK & China Gas
+    - 0016.HK    # Sun Hung Kai Properties
+
+    # ── Japan (Tokyo Stock Exchange) ──────────────────────────
+    - 7203.T     # Toyota
+    - 6758.T     # Sony
+    - 9984.T     # SoftBank Group
+    - 8306.T     # Mitsubishi UFJ Financial
+    - 6501.T     # Hitachi
+    - 7974.T     # Nintendo
+    - 4519.T     # Chugai Pharmaceutical
+    - 8316.T     # Sumitomo Mitsui Financial
+    - 9432.T     # NTT
+    - 6954.T     # Fanuc
+    - 7267.T     # Honda
+    - 6861.T     # Keyence
+    - 4502.T     # Takeda Pharmaceutical
+    - 8035.T     # Tokyo Electron
+    - 6902.T     # Denso
+    - 9433.T     # KDDI
+    - 7751.T     # Canon
+    - 6301.T     # Komatsu
+    - 4661.T     # Oriental Land (Tokyo Disney)
+    - 2914.T     # Japan Tobacco
+
+    # ── India (NSE) ───────────────────────────────────────────
+    - RELIANCE.NS  # Reliance Industries
+    - TCS.NS       # Tata Consultancy Services
+    - HDFCBANK.NS  # HDFC Bank
+    - INFY.NS      # Infosys
+    - ICICIBANK.NS # ICICI Bank
+    - HINDUNILVR.NS # Hindustan Unilever
+    - ITC.NS       # ITC
+    - SBIN.NS      # State Bank of India
+    - BHARTIARTL.NS # Bharti Airtel
+    - KOTAKBANK.NS # Kotak Mahindra Bank
+    - LT.NS        # Larsen & Toubro
+    - BAJFINANCE.NS # Bajaj Finance
+    - ASIANPAINT.NS # Asian Paints
+    - AXISBANK.NS  # Axis Bank
+    - MARUTI.NS    # Maruti Suzuki
+    - SUNPHARMA.NS # Sun Pharmaceutical
+    - WIPRO.NS     # Wipro
+    - HCLTECH.NS   # HCL Technologies
+    - TITAN.NS     # Titan Company
+    - NESTLEIND.NS # Nestle India
+
+    # ── New Zealand (NZX) — opens 22:00 CET, fills the gap ───
+    - SPK.NZ     # Spark New Zealand
+    - FBU.NZ     # Fletcher Building
+    - AIA.NZ     # Auckland Airport
+    - MFT.NZ     # Mainfreight
+    - EBO.NZ     # EBOS Group
+    - ATM.NZ     # a2 Milk
+    - PCT.NZ     # Precinct Properties
+    - CEN.NZ     # Contact Energy
+    - MEL.NZ     # Meridian Energy
+    - RYM.NZ     # Ryman Healthcare
+
+    # ── Australia (ASX) ──────────────────────────────────────
+    - BHP.AX     # BHP Group
+    - CBA.AX     # Commonwealth Bank
+    - CSL.AX     # CSL (biotech)
+    - NAB.AX     # National Australia Bank
+    - WBC.AX     # Westpac Banking
+    - ANZ.AX     # ANZ Banking
+    - WES.AX     # Wesfarmers
+    - WOW.AX     # Woolworths
+    - MQG.AX     # Macquarie Group
+    - RIO.AX     # Rio Tinto
+    - FMG.AX     # Fortescue Metals
+    - NCM.AX     # Newcrest Mining
+    - TLS.AX     # Telstra
+    - WPL.AX     # Woodside Energy
+    - STO.AX     # Santos
+    - QBE.AX     # QBE Insurance
+    - AMC.AX     # Amcor
+    - TCL.AX     # Transurban
+    - GMG.AX     # Goodman Group
+    - REA.AX     # REA Group
+
+    # ── ETFs (global dækning) ─────────────────────────────────
+    - SPY        # S&P 500
+    - QQQ        # NASDAQ 100
+    - IWM        # Russell 2000
+    - VTI        # Total US Market
+    - VEA        # Developed Markets ex-US
+    - VWO        # Emerging Markets
+    - EWJ        # Japan ETF
+    - EWH        # Hong Kong ETF
+    - INDA        # India ETF
+    - EWG        # Germany ETF
+    - EWQ        # France ETF
+    - EWU        # UK ETF
+    - GLD        # Gold ETF
+    - SLV        # Silver ETF
+    - USO        # Oil ETF
+    - TLT        # 20+ Year Treasury ETF
+    - HYG        # High Yield Bond ETF
+    - XLK        # Technology Sector
+    - XLF        # Financial Sector
+    - XLE        # Energy Sector
+    - XLV        # Healthcare Sector
+    - XLI        # Industrial Sector
+    - XLC        # Communication Sector
+    - XLY        # Consumer Discretionary
+    - XLP        # Consumer Staples
+    - XLB        # Materials Sector
+    - XLRE       # Real Estate Sector
+    - XLU        # Utilities Sector
+
+    # ── Crypto (24/7) ─────────────────────────────────────────
+    - BTC-USD    # Bitcoin
+    - ETH-USD    # Ethereum
+    - BNB-USD    # Binance Coin
+    - SOL-USD    # Solana
+    - XRP-USD    # XRP
+    - ADA-USD    # Cardano
+    - AVAX-USD   # Avalanche
+    - DOT-USD    # Polkadot
+    - MATIC-USD  # Polygon
+
+  schedule:
+    market_open: "09:30"
+    market_close: "16:00"
+    timezone: US/Eastern
+    check_interval_seconds: 60
+
+# --- Strategi -------------------------------------------------
+strategy:
+  default: sma_crossover
+  sma_crossover:
+    short_window: 8             # Faster crossover for intraday/crypto (was 20)
+    long_window: 21             # Faster crossover (was 50)
+  rsi:
+    period: 7                   # More responsive RSI (was 14)
+    overbought: 65              # Sell earlier (was 70)
+    oversold: 35                # Buy earlier (was 30)
+  bollinger:
+    window: 20
+    num_std: 2
+
+# --- Risikostyring --------------------------------------------
+risk:
+  max_position_pct: 0.15        # Maks 15 % af portefølje pr. position (was 0.10)
+  max_daily_loss_pct: 0.05      # Stop al handel ved 5 % dagligt tab (was 0.15)
+  max_open_positions: 8         # Fokuser kapital (was 30)
+  stop_loss_pct: 0.015          # Tighter SL for crypto scalping (was 0.05)
+  take_profit_pct: 0.025        # Take profits faster (was 0.10)
+  trailing_stop_pct: 0.012      # Lock gains faster (was 0.07)
+  max_drawdown_pct: 0.10        # Stop ALT ved 10 % drawdown (was 0.25)
+  max_correlation: 0.85         # Undgå for mange korrelerede positioner
+
+# --- Backtesting ----------------------------------------------
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2025-12-31"
+  initial_capital: 100000
+  commission_pct: 0.0
+
+# --- Dashboard ------------------------------------------------
+dashboard:
+  host: 127.0.0.1
+  port: 8050
+  debug: false
+  refresh_interval_seconds: 30
+
+# --- Univers (aktivklasser) ------------------------------------
+universe:
+  categories:
+    us_stocks: true
+    nordic_stocks: true
+    european_stocks: true
+    asian_stocks: true
+    emerging_markets: true
+    etfs: true
+    commodities: true
+    crypto: true
+    bonds: false
+    forex: true
+
+  regions: []
+  min_market_cap: 0
+  max_symbols_per_scan: 200
+  parallel_workers: 8
+  batch_size: 50
+  watchlist: []
+
+# --- Multi-Broker (Alpha Trader) ---------------------------------
+multi_broker:
+  enabled: false
+  default_currency: DKK
+
+  alpaca:
+    enabled: true
+    paper: true
+
+  saxo:
+    enabled: false
+    environment: sim
+
+  ibkr:
+    enabled: false
+    host: 127.0.0.1
+    port: 7497
+    client_id: 1
+
+  nordnet:
+    enabled: false
+    country: dk
+
+# --- Corporate Tax --------------------------------------------
+corporate_tax:
+  enabled: false
+  corporate_rate: 0.22
+  lagerbeskatning: true
+  tax_credit_initial: 0
+  fifo_tracking: true
+  db_path: data/tax_corporate.db
+
+# --- Skat (privat) ---------------------------------------------
+tax:
+  progression_limit: 61000
+  low_rate: 0.27
+  high_rate: 0.42
+  carried_losses: 0.0
+  fallback_fx_rate: 6.90
+  currency: DKK
+
+# --- Notifikationer --------------------------------------------
+notifications:
+  enabled: true
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  monthly_report: true
+  progression_alert: true
+  march_reminder: true
+  on_trade_executed: true
+  on_stop_loss: true
+  on_trailing_stop: true
+  on_take_profit: true
+  on_daily_report: true
+  on_drawdown_warning: true
+  drawdown_threshold_pct: 0.05
+
+# --- Ops ------------------------------------------------------
+ops:
+  scheduler_enabled: true
+  backup_dir: backups
+  backup_retention_days: 30
+  pg_host: localhost
+  pg_port: 5432
+  pg_user: alpha_trader
+  pg_database: alpha_trader
+
+# --- Logging --------------------------------------------------
+logging:
+  level: DEBUG
+  file: logs/trading.log
+  rotation: 1 day
+  retention: 30 days

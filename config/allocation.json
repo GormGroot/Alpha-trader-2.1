@@ -1,0 +1,7 @@
+{
+  "stocks_pct": 50,
+  "bonds_pct": 25,
+  "commodities_pct": 10,
+  "crypto_pct": 5,
+  "cash_pct": 10
+}

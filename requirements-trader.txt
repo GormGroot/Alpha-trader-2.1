@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════════
+#  Alpha Trader — Extra Dependencies (beyond requirements.txt)
+# ═══════════════════════════════════════════════════════════
+#  Install: pip install -r requirements.txt -r requirements-trader.txt
+
+# --- Multi-Broker ---
+ib_insync>=0.9.86          # Interactive Brokers via TWS/Gateway
+requests>=2.31.0           # Saxo & Nordnet HTTP API
+cryptography>=41.0.0       # Saxo token encryption
+
+# --- Database ---
+psycopg2-binary>=2.9.9     # PostgreSQL
+redis>=5.0.0               # Redis caching (optional)
+
+# --- Dashboard Extensions ---
+dash-bootstrap-components>=1.5.0  # Bootstrap dark theme
+
+# --- Tax & Finance ---
+python-dateutil>=2.8.2     # Easter calculation for holidays
+
+# --- Email ---
+# (smtp built into Python stdlib, no extra deps)
+
+# --- AI/Claude ---
+anthropic>=0.39.0          # Claude API
+
+# --- Dev/Test ---
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# --- YAML Config ---
+pyyaml>=6.0

@@ -1,0 +1,489 @@
+{
+  "timestamp": "2026-03-28T04:11:09.121229",
+  "errors": [],
+  "paper_portfolio.db": {
+    "portfolio_state": 4,
+    "open_positions": 52,
+    "closed_trades": 55,
+    "sqlite_sequence": 2,
+    "equity_history": 2327
+  },
+  "auto_trader_log.db": {
+    "scans": 0,
+    "sqlite_sequence": 0,
+    "trades": 0
+  },
+  "signal_log.db": "NOT FOUND",
+  "learning.db": {
+    "trade_outcomes": 0,
+    "sqlite_sequence": 0,
+    "model_scores": 0,
+    "drift_events": 0,
+    "crisis_similarities": 0,
+    "learning_log": 0
+  },
+  "portfolio": {
+    "cash": 85705.52,
+    "equity": 114234.39,
+    "num_positions": 52,
+    "positions": [
+      {
+        "symbol": "WBC.AX",
+        "qty": 120.0,
+        "entry_price": 40.04,
+        "current_price": 40.04,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "9618.HK",
+        "qty": 46.0,
+        "entry_price": 105.8,
+        "current_price": 105.8,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "1398.HK",
+        "qty": 757.0,
+        "entry_price": 6.42,
+        "current_price": 6.42,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "MQG.AX",
+        "qty": 25.0,
+        "entry_price": 195.26,
+        "current_price": 195.26,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "CSL.AX",
+        "qty": 34.0,
+        "entry_price": 139.63,
+        "current_price": 139.63,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "TCL.AX",
+        "qty": 319.0,
+        "entry_price": 13.76,
+        "current_price": 13.76,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "BHP.AX",
+        "qty": 91.0,
+        "entry_price": 48.55,
+        "current_price": 48.55,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "FMG.AX",
+        "qty": 218.0,
+        "entry_price": 19.64,
+        "current_price": 19.64,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ENEL.MI",
+        "qty": 538.0,
+        "entry_price": 9.07,
+        "current_price": 9.07,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "SEB-A.ST",
+        "qty": 27.0,
+        "entry_price": 178.6,
+        "current_price": 178.6,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "RWE.DE",
+        "qty": 85.0,
+        "entry_price": 54.94,
+        "current_price": 54.94,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ULVR.L",
+        "qty": 1.0,
+        "entry_price": 4535.0,
+        "current_price": 4535.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ADS.DE",
+        "qty": 33.0,
+        "entry_price": 133.25,
+        "current_price": 133.25,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "LSEG.L",
+        "qty": 1.0,
+        "entry_price": 8436.0,
+        "current_price": 8436.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "DEMANT.CO",
+        "qty": 24.0,
+        "entry_price": 178.0,
+        "current_price": 178.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ATCO-A.ST",
+        "qty": 26.0,
+        "entry_price": 161.75,
+        "current_price": 161.75,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "SAND.ST",
+        "qty": 12.0,
+        "entry_price": 342.0,
+        "current_price": 342.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ITX.MC",
+        "qty": 81.0,
+        "entry_price": 50.1,
+        "current_price": 50.1,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "TRYG.CO",
+        "qty": 27.0,
+        "entry_price": 151.6,
+        "current_price": 151.6,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "BAYN.DE",
+        "qty": 100.0,
+        "entry_price": 38.47,
+        "current_price": 38.47,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ENI.MI",
+        "qty": 147.0,
+        "entry_price": 22.52,
+        "current_price": 22.52,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "MUV2.DE",
+        "qty": 6.0,
+        "entry_price": 519.8,
+        "current_price": 519.8,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "LMT",
+        "qty": 8.0,
+        "entry_price": 616.25,
+        "current_price": 616.25,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "SBUX",
+        "qty": 51.0,
+        "entry_price": 93.83,
+        "current_price": 93.83,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "MCD",
+        "qty": 16.0,
+        "entry_price": 308.47,
+        "current_price": 308.47,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "MA",
+        "qty": 9.0,
+        "entry_price": 500.38,
+        "current_price": 500.38,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "V",
+        "qty": 15.0,
+        "entry_price": 304.44,
+        "current_price": 304.44,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "XLP",
+        "qty": 51.0,
+        "entry_price": 81.18,
+        "current_price": 81.18,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "TXN",
+        "qty": 21.0,
+        "entry_price": 188.63,
+        "current_price": 188.63,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ERIC-B.ST",
+        "qty": 39.0,
+        "entry_price": 107.4,
+        "current_price": 107.4,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "XLF",
+        "qty": 86.0,
+        "entry_price": 49.34,
+        "current_price": 49.34,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "SAMPO.HE",
+        "qty": 546.0,
+        "entry_price": 9.06,
+        "current_price": 9.06,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "LE=F",
+        "qty": 20.0885,
+        "entry_price": 230.43,
+        "current_price": 230.43,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "A",
+        "qty": 1.0,
+        "entry_price": 10.0,
+        "current_price": 10.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "B",
+        "qty": 1.0,
+        "entry_price": 10.0,
+        "current_price": 10.0,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "QQQ",
+        "qty": 9.0,
+        "entry_price": 564.53,
+        "current_price": 564.53,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "ABT",
+        "qty": 51.0,
+        "entry_price": 105.02,
+        "current_price": 105.02,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "HG=F",
+        "qty": 878.9485,
+        "entry_price": 5.48,
+        "current_price": 5.48,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "HE=F",
+        "qty": 45.8527,
+        "entry_price": 106.2,
+        "current_price": 106.2,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "VEA",
+        "qty": 76.0,
+        "entry_price": 62.03,
+        "current_price": 62.03,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "VWO",
+        "qty": 89.0,
+        "entry_price": 52.52,
+        "current_price": 52.52,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "PL=F",
+        "qty": 2.4823,
+        "entry_price": 1875.9,
+        "current_price": 1875.9,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "XLK",
+        "qty": 35.0,
+        "entry_price": 130.29,
+        "current_price": 130.29,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "NVDA",
+        "qty": 27.0,
+        "entry_price": 168.03,
+        "current_price": 168.03,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "XRP-USD",
+        "qty": 2593.8422,
+        "entry_price": 1.33,
+        "current_price": 1.33,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "AMC.AX",
+        "qty": 88.0,
+        "entry_price": 56.39,
+        "current_price": 56.39,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "AIA.NZ",
+        "qty": 1342.0,
+        "entry_price": 7.97,
+        "current_price": 7.97,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "RYM.NZ",
+        "qty": 4929.0,
+        "entry_price": 2.13,
+        "current_price": 2.13,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "CEN.NZ",
+        "qty": 998.0,
+        "entry_price": 9.09,
+        "current_price": 9.09,
+        "pnl": 0,
+        "pnl_pct": 0
+      },
+      {
+        "symbol": "AXP",
+        "qty": 13.0,
+        "entry_price": 293.78,
+        "current_price": 299.28,
+        "pnl": -71.5,
+        "pnl_pct": -1.87
+      },
+      {
+        "symbol": "BMY",
+        "qty": 74.0,
+        "entry_price": 58.54,
+        "current_price": 59.4,
+        "pnl": 64.01,
+        "pnl_pct": 1.48
+      },
+      {
+        "symbol": "EBO.NZ",
+        "qty": 456.0,
+        "entry_price": 22.6,
+        "current_price": 22.6,
+        "pnl": 0,
+        "pnl_pct": 0
+      }
+    ]
+  },
+  "config/exchange_stop_loss.json": {
+    "us_stocks": 4.0,
+    "denmark": 3.0,
+    "crypto": 0.5,
+    "chicago": 0.5
+  },
+  "config/global_stop_loss.json": {
+    "stop_loss_pct": 4.5
+  },
+  "config/max_positions.json": {
+    "max_open_positions": 81
+  },
+  "config/risk_sizing.json": {
+    "max_position_pct": 20.0,
+    "max_exposure_pct": 80.0
+  },
+  "auto_trader": "NOT RUNNING",
+  "dashboard_import": "OK",
+  "open_markets": [
+    "crypto"
+  ],
+  "equity_history": {
+    "first_ts": "2026-03-24T19:29:59.484932",
+    "last_ts": "2026-03-28T04:04:29.252067",
+    "min_equity": 98466.59460486603,
+    "max_equity": 114721.73584352167,
+    "count": 2327
+  },
+  "closed_trades_summary": {
+    "count": 55,
+    "total_pnl": 9734.78,
+    "winners": 21,
+    "first_exit": "2026-03-24T13:41:59.002896",
+    "last_exit": "2026-03-27T21:36:56.109558"
+  },
+  "system": {
+    "cpu_pct": 0.0,
+    "mem_total_gb": 16.7,
+    "mem_used_gb": 2.8,
+    "mem_pct": 16.5
+  }
+}

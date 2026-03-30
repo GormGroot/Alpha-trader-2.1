@@ -1,0 +1,12 @@
+{
+  "default": "da",
+  "available": [
+    {"code": "en", "name": "English", "flag": "🇬🇧", "file": "eng.lan"},
+    {"code": "da", "name": "Dansk", "flag": "🇩🇰", "file": "dansk.lan"},
+    {"code": "fr", "name": "Français", "flag": "🇫🇷", "file": "francais.lan"},
+    {"code": "de", "name": "Deutsch", "flag": "🇩🇪", "file": "deutsch.lan"},
+    {"code": "es", "name": "Español", "flag": "🇪🇸", "file": "espanol.lan"},
+    {"code": "pt", "name": "Português", "flag": "🇵🇹", "file": "portugues.lan"},
+    {"code": "vl", "name": "Vlaams", "flag": "🇧🇪", "file": "vlaams.lan"}
+  ]
+}

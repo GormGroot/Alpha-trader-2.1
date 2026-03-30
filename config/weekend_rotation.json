@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "crypto_allocation_pct": 60,
+  "close_stocks": true,
+  "close_futures": true
+}

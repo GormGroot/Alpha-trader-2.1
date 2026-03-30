@@ -1,0 +1,91 @@
+
+        <html><head>
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background-color: #0f1117; color: #e2e8f0; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; background: #1a1c24;
+                 border-radius: 12px; padding: 24px; border: 1px solid #2d3748; }
+    .header { color: #00d4aa; font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 20px; }
+    .kpi-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .kpi { flex: 1; min-width: 120px; background: #0f1117; border-radius: 8px;
+           padding: 12px; border: 1px solid #2d3748; }
+    .kpi-label { color: #64748b; font-size: 12px; margin-bottom: 4px; }
+    .kpi-value { color: #e2e8f0; font-size: 20px; font-weight: 700; }
+    .positive { color: #2ed573; }
+    .negative { color: #ff4757; }
+    .section { margin-top: 20px; }
+    .section-title { color: #00d4aa; font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { color: #64748b; font-size: 12px; text-align: left; padding: 8px; border-bottom: 1px solid #2d3748; }
+    td { color: #e2e8f0; font-size: 13px; padding: 8px; border-bottom: 1px solid #2d3748; }
+    .footer { color: #64748b; font-size: 11px; margin-top: 20px; text-align: center; }
+    .alert { background: #ff4757; color: white; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: #2ed573; color: #0f1117; }
+    .badge-red { background: #ff4757; color: white; }
+    .badge-orange { background: #ffa502; color: #0f1117; }
+    .badge-gray { background: #64748b; color: white; }
+</style>
+</head><body>
+        <div class="container">
+            <div class="header">🌙 Aftenrapport</div>
+            <div class="subtitle">Tuesday 17. March 2026, 19:04 CET</div>
+
+            <div class="kpi-row">
+                <div class="kpi">
+                    <div class="kpi-label">Portfolio</div>
+                    <div class="kpi-value">1,500,000 DKK</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Daglig P&L</div>
+                    <div class="kpi-value positive">
+                        +12,500 DKK (+0.84%)
+                    </div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">YTD P&L</div>
+                    <div class="kpi-value positive">
+                        +185,000 DKK
+                    </div>
+                </div>
+            </div>
+
+            <div class="kpi-row">
+                <div class="kpi">
+                    <div class="kpi-label">Skattetilgodehavende</div>
+                    <div class="kpi-value">350,000 DKK</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Estimeret skat YTD</div>
+                    <div class="kpi-value">40,700 DKK</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Udbytter YTD</div>
+                    <div class="kpi-value">12,000 DKK</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">🏆 Top Winners</div>
+                <table><tr><td>Ingen data</td></tr></table>
+            </div>
+
+            <div class="section">
+                <div class="section-title">📉 Top Losers</div>
+                <table><tr><td>Ingen data</td></tr></table>
+            </div>
+
+            
+
+            
+
+            <div class="section">
+                <div class="section-title">Broker Status</div>
+                <table><tr><td>alpaca</td><td><span class="badge badge-green">CONNECTED</span></td></tr><tr><td>saxo</td><td><span class="badge badge-red">DISCONNECTED</span></td></tr><tr><td>ibkr</td><td><span class="badge badge-red">DISCONNECTED</span></td></tr><tr><td>nordnet</td><td><span class="badge badge-red">DISCONNECTED</span></td></tr></table>
+            </div>
+
+            <div class="footer">Alpha Trading Platform — automatisk aftenrapport</div>
+        </div>
+        </body></html>
+        

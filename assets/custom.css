@@ -1,0 +1,55 @@
+/* Dark theme for all Dash dropdowns */
+.Select-control,
+.Select-menu-outer,
+.Select-menu,
+.Select-option,
+.VirtualizedSelectOption {
+    background-color: #0f1117 !important;
+    color: #e2e8f0 !important;
+    border-color: #2d3748 !important;
+}
+
+.Select-value-label,
+.Select-placeholder,
+.Select-input > input {
+    color: #e2e8f0 !important;
+}
+
+.Select-option.is-focused,
+.VirtualizedSelectFocusedOption {
+    background-color: #1a1c24 !important;
+    color: #00d4aa !important;
+}
+
+.Select-option.is-selected {
+    background-color: #2d3748 !important;
+    color: #00d4aa !important;
+}
+
+.Select-arrow-zone .Select-arrow {
+    border-color: #64748b transparent transparent !important;
+}
+
+.Select.is-open > .Select-control {
+    border-color: #00d4aa !important;
+}
+
+.Select-clear-zone {
+    color: #64748b !important;
+}
+
+/* Dash dropdown v2 (newer versions) */
+.dash-dropdown .Select-control {
+    background-color: #0f1117 !important;
+}
+
+.dash-dropdown .Select-menu-outer {
+    background-color: #0f1117 !important;
+    border: 1px solid #2d3748 !important;
+    z-index: 9999;
+}
+
+/* Override for dropdown single value display */
+.Select--single > .Select-control .Select-value {
+    color: #e2e8f0 !important;
+}

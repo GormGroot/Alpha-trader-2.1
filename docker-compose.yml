@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════════
+#  Alpha Trading Platform — Docker Compose
+# ═══════════════════════════════════════════════════════════
+#  Start: docker-compose up -d
+#  Stop:  docker-compose down
+#  Logs:  docker-compose logs -f alpha-trader
+# ═══════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: alpha-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alpha_trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-alpha_trader}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups/pg:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alpha_trader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (caching, rate limiting) ──────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: alpha-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── Alpha Trader Platform ──────────────────────────────
+  alpha-trader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpha-trader
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${DASHBOARD_PORT:-8050}:8050"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./config:/app/config
+    command: python main.py --mode trader --paper --host 0.0.0.0
+
+  # ── Alpha Trader (headless — kun scheduler) ─────────────
+  # Uncomment for headless mode:
+  # alpha-scheduler:
+  #   build: .
+  #   container_name: alpha-scheduler
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - POSTGRES_HOST=postgres
+  #     - REDIS_URL=redis://redis:6379/0
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./logs:/app/logs
+  #     - ./backups:/app/backups
+  #   command: python main.py --mode trader --headless
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
