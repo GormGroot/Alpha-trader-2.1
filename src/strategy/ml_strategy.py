@@ -486,9 +486,9 @@ class MLStrategy(BaseStrategy):
     @staticmethod
     def _calc_sharpe(returns: np.ndarray) -> float:
         """Annualiseret Sharpe ratio."""
-        if len(returns) < 2 or np.std(returns) == 0:
+        if len(returns) < 2 or np.std(returns, ddof=1) == 0:
             return 0.0
-        return float(np.mean(returns) / np.std(returns) * np.sqrt(252))
+        return float(np.mean(returns) / np.std(returns, ddof=1) * np.sqrt(252))
 
     # ── Forklaring ────────────────────────────────────────────
 

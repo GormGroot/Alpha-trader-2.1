@@ -9,6 +9,11 @@ Professionelt Dash-dashboard med 4 sider:
 
 Start: python -m src.dashboard.app
 URL:   http://localhost:8050
+
+Security note (H-15): This dashboard is intended for local/trusted network use only.
+All user-facing data is rendered through Dash components (dcc/dbc/html), which auto-escape
+content and prevent XSS. Avoid using raw HTML strings (e.g. innerHTML, Markdown with
+allow_dangerous_html) for any data originating from external sources (broker APIs, user input).
 """
 
 from __future__ import annotations
@@ -403,6 +408,30 @@ app.layout = html.Div([
         "minHeight": "100vh",
         "transition": "none",
     }),
+
+    # ── Weekend Crypto Rollover Approval Modal ──
+    dcc.Interval(id="weekend-approval-poll", interval=15 * 1000, n_intervals=0),
+    dbc.Modal([
+        dbc.ModalHeader(
+            dbc.ModalTitle([
+                html.I(className="bi bi-exclamation-triangle-fill me-2",
+                       style={"color": COLORS["orange"]}),
+                "Weekend Crypto Rollover",
+            ]),
+            close_button=False,
+            style={"backgroundColor": COLORS["card"], "borderBottom": f"1px solid {COLORS['border']}"},
+        ),
+        dbc.ModalBody(id="weekend-approval-body",
+                      style={"backgroundColor": COLORS["card"]}),
+        dbc.ModalFooter([
+            dbc.Button([html.I(className="bi bi-x-circle me-2"), "Afvis"],
+                       id="btn-weekend-reject", color="danger", outline=True, className="me-2"),
+            dbc.Button([html.I(className="bi bi-check-circle me-2"), "Godkend rollover"],
+                       id="btn-weekend-approve", color="success"),
+        ], style={"backgroundColor": COLORS["card"], "borderTop": f"1px solid {COLORS['border']}"}),
+    ], id="weekend-approval-modal", is_open=False, centered=True, size="lg",
+       backdrop="static", keyboard=False),
+    html.Div(id="weekend-approval-status", style={"display": "none"}),
 ], style={"backgroundColor": COLORS["bg"]})
 
 
@@ -1963,6 +1992,9 @@ def page_market_overview():
     ], className="g-3 mb-4")
 
     # ── Sektor-heatmap ──
+    # H-21: Heatmap uses live sector_performance data from scanner results.
+    # If scanner data is unavailable, an empty figure is shown as fallback.
+    # TODO: Add a visible "no data" message when sectors list is empty.
     if sectors:
         s_names = [s.name for s in sectors]
         s_1m = [s.change_1m for s in sectors]
@@ -6569,10 +6601,35 @@ def page_performance_report():
                        "borderRadius": "8px"}), md=4, className="mb-3"),
         ]),
 
+        # ── Fee Report Section ──
+        html.Hr(style={"borderColor": COLORS["border"]}),
+        html.H4([html.I(className="bi bi-cash-coin me-2"), "Gebyrrapport (ugentlig)"],
+                 style={"color": COLORS["text"]}, className="mt-3 mb-3"),
+        html.P("Handelsgebyrer fordelt pr. uge, børs og mægler.",
+               style={"color": COLORS["muted"]}),
+
+        dbc.Row([
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.H6([html.I(className="bi bi-cash-coin me-2"), "Gebyrrapport"],
+                         style={"color": COLORS["text"]}),
+                html.P("Ugentlig gebyrrapport med alle omkostninger",
+                       style={"color": COLORS["muted"], "fontSize": "0.85rem"}, className="mb-2"),
+                dbc.Button(
+                    [html.I(className="bi bi-download me-2"), "Download CSV"],
+                    id="btn-generate-fee-report", color="danger", outline=True, className="w-100",
+                ),
+            ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px"}), md=4, className="mb-3"),
+        ]),
+
+        # Fee summary table (rendered on button click)
+        html.Div(id="fee-report-table", className="mt-3"),
+
         html.Div(id="perf-report-status", className="mt-2"),
         dcc.Download(id="download-perf-report"),
         dcc.Download(id="download-tax-report"),
         dcc.Download(id="download-settings-report"),
+        dcc.Download(id="download-fee-report"),
     ], fluid=True, className="p-4")
 
 
@@ -6660,6 +6717,425 @@ def _download_settings_report(n_clicks):
             "Settings eksporteret.", style={"color": COLORS["green"]})
     except Exception as e:
         return dash.no_update, html.Span(f"Settings fejl: {e}", style={"color": COLORS["red"]})
+
+
+# ── Fee report download + table ──
+@callback(
+    Output("download-fee-report", "data"),
+    Output("fee-report-table", "children"),
+    Output("perf-report-status", "children", allow_duplicate=True),
+    Input("btn-generate-fee-report", "n_clicks"),
+    prevent_initial_call=True,
+)
+def _download_fee_report(n_clicks):
+    if not n_clicks:
+        return dash.no_update, dash.no_update, dash.no_update
+    try:
+        import csv, io, sqlite3
+        from datetime import datetime as _dt, timedelta
+        from collections import defaultdict
+        from src.fees.fee_calculator import FeeCalculator, get_exchange_for_symbol
+
+        # Load closed trades from portfolio DB
+        db_path = Path("data_cache/paper_portfolio.db")
+        if not db_path.exists():
+            return dash.no_update, dash.no_update, html.Span(
+                "Ingen portefølje-database fundet.", style={"color": COLORS["red"]})
+
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT symbol, side, qty, entry_price, exit_price, "
+            "entry_time, exit_time, realized_pnl FROM closed_trades "
+            "ORDER BY exit_time"
+        ).fetchall()
+        conn.close()
+
+        if not rows:
+            return dash.no_update, dash.no_update, html.Span(
+                "Ingen lukkede handler fundet.", style={"color": COLORS["red"]})
+
+        # Compute fees for each trade using FeeCalculator
+        fee_calc = FeeCalculator(broker="paper")
+        trade_fees = []
+        for row in rows:
+            symbol = row["symbol"]
+            qty = row["qty"]
+            entry_price = row["entry_price"]
+            exit_price = row["exit_price"]
+            exit_time = row["exit_time"] or ""
+            entry_time = row["entry_time"] or ""
+            pnl = row["realized_pnl"]
+
+            # Calculate entry + exit fees
+            entry_fee = fee_calc.calculate(symbol, "buy", qty, entry_price)
+            exit_fee = fee_calc.calculate(symbol, "sell", qty, exit_price)
+            total_fee = entry_fee.total + exit_fee.total
+
+            exchange = get_exchange_for_symbol(symbol)
+
+            trade_fees.append({
+                "symbol": symbol,
+                "exchange": exchange,
+                "qty": qty,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "entry_time": entry_time,
+                "exit_time": exit_time,
+                "pnl": pnl,
+                "entry_commission": entry_fee.commission,
+                "exit_commission": exit_fee.commission,
+                "spread_cost": entry_fee.spread_cost + exit_fee.spread_cost,
+                "stamp_duty": entry_fee.stamp_duty + exit_fee.stamp_duty,
+                "transaction_tax": entry_fee.transaction_tax + exit_fee.transaction_tax,
+                "fx_spread": entry_fee.fx_spread_cost + exit_fee.fx_spread_cost,
+                "exchange_fee": entry_fee.exchange_fee + exit_fee.exchange_fee,
+                "total_fee": total_fee,
+            })
+
+        # ── Group by ISO week ──
+        weekly = defaultdict(lambda: {
+            "trades": 0, "volume": 0.0, "commission": 0.0,
+            "spread": 0.0, "stamp_duty": 0.0, "tax": 0.0,
+            "fx_spread": 0.0, "exchange_fee": 0.0, "total_fee": 0.0,
+            "pnl": 0.0, "net_pnl": 0.0,
+        })
+        exchange_totals = defaultdict(lambda: {"trades": 0, "total_fee": 0.0, "volume": 0.0})
+
+        for tf in trade_fees:
+            # Parse exit_time for week grouping
+            try:
+                dt = _dt.fromisoformat(tf["exit_time"])
+                iso = dt.isocalendar()
+                week_key = f"{iso[0]}-W{iso[1]:02d}"
+                week_start = _dt.fromisocalendar(iso[0], iso[1], 1).strftime("%d/%m")
+                week_end = _dt.fromisocalendar(iso[0], iso[1], 7).strftime("%d/%m")
+                week_label = f"{week_key} ({week_start}-{week_end})"
+            except (ValueError, TypeError):
+                week_label = "Ukendt"
+
+            volume = tf["qty"] * tf["exit_price"]
+            w = weekly[week_label]
+            w["trades"] += 1
+            w["volume"] += volume
+            w["commission"] += tf["entry_commission"] + tf["exit_commission"]
+            w["spread"] += tf["spread_cost"]
+            w["stamp_duty"] += tf["stamp_duty"]
+            w["tax"] += tf["transaction_tax"]
+            w["fx_spread"] += tf["fx_spread"]
+            w["exchange_fee"] += tf["exchange_fee"]
+            w["total_fee"] += tf["total_fee"]
+            w["pnl"] += tf["pnl"]
+            w["net_pnl"] += tf["pnl"] - tf["total_fee"]
+
+            ex = exchange_totals[tf["exchange"]]
+            ex["trades"] += 1
+            ex["total_fee"] += tf["total_fee"]
+            ex["volume"] += volume
+
+        # ── Build CSV ──
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "Uge", "Handler", "Volumen", "Kommission", "Spread",
+            "Stempelafgift", "Transaktionsskat", "FX-spread",
+            "Børsgebyr", "Gebyr i alt", "Brutto P&L", "Netto P&L",
+        ])
+        grand_total = 0.0
+        for week_label in sorted(weekly.keys()):
+            w = weekly[week_label]
+            grand_total += w["total_fee"]
+            writer.writerow([
+                week_label, w["trades"], f"{w['volume']:.2f}",
+                f"{w['commission']:.2f}", f"{w['spread']:.2f}",
+                f"{w['stamp_duty']:.2f}", f"{w['tax']:.2f}",
+                f"{w['fx_spread']:.2f}", f"{w['exchange_fee']:.2f}",
+                f"{w['total_fee']:.2f}", f"{w['pnl']:.2f}", f"{w['net_pnl']:.2f}",
+            ])
+        writer.writerow([])
+        writer.writerow(["--- Gebyrer pr. børs ---"])
+        writer.writerow(["Børs", "Handler", "Volumen", "Gebyr i alt", "Gebyr %"])
+        for exch in sorted(exchange_totals.keys()):
+            ex = exchange_totals[exch]
+            fee_pct = (ex["total_fee"] / ex["volume"] * 100) if ex["volume"] > 0 else 0
+            writer.writerow([exch, ex["trades"], f"{ex['volume']:.2f}",
+                             f"{ex['total_fee']:.2f}", f"{fee_pct:.4f}%"])
+
+        filename = f"alpha_fee_report_{_dt.now():%Y%m%d_%H%M}.csv"
+
+        # ── Build dashboard table ──
+        # Weekly summary table
+        weekly_rows = []
+        for week_label in sorted(weekly.keys(), reverse=True)[:12]:
+            w = weekly[week_label]
+            fee_pct = (w["total_fee"] / w["volume"] * 100) if w["volume"] > 0 else 0
+            weekly_rows.append(html.Tr([
+                html.Td(week_label, style={"color": COLORS["text"]}),
+                html.Td(str(w["trades"]), style={"color": COLORS["text"], "textAlign": "right"}),
+                html.Td(f"${w['volume']:,.0f}", style={"color": COLORS["text"], "textAlign": "right"}),
+                html.Td(f"${w['commission']:.2f}", style={"color": COLORS["orange"], "textAlign": "right"}),
+                html.Td(f"${w['spread']:.2f}", style={"color": COLORS["muted"], "textAlign": "right"}),
+                html.Td(f"${w['total_fee']:.2f}", style={
+                    "color": COLORS["red"], "textAlign": "right", "fontWeight": "bold"}),
+                html.Td(f"{fee_pct:.3f}%", style={"color": COLORS["muted"], "textAlign": "right"}),
+                html.Td(f"${w['pnl']:.2f}", style={
+                    "color": COLORS["green"] if w["pnl"] >= 0 else COLORS["red"], "textAlign": "right"}),
+                html.Td(f"${w['net_pnl']:.2f}", style={
+                    "color": COLORS["green"] if w["net_pnl"] >= 0 else COLORS["red"],
+                    "textAlign": "right", "fontWeight": "bold"}),
+            ]))
+
+        weekly_table = dbc.Card(dbc.CardBody([
+            html.H5([html.I(className="bi bi-calendar-week me-2"), "Ugentlig gebyroversigt (seneste 12 uger)"],
+                     style={"color": COLORS["accent"]}, className="mb-3"),
+            html.Table([
+                html.Thead(html.Tr([
+                    html.Th("Uge", style={"color": COLORS["muted"]}),
+                    html.Th("Handler", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Volumen", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Kommission", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Spread", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Gebyr i alt", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Gebyr %", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Brutto P&L", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Netto P&L", style={"color": COLORS["muted"], "textAlign": "right"}),
+                ])),
+                html.Tbody(weekly_rows),
+            ], style={"width": "100%", "borderCollapse": "collapse"},
+               className="table table-dark table-sm table-hover"),
+        ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                   "borderRadius": "8px"}, className="mb-3")
+
+        # Exchange breakdown table
+        exch_rows = []
+        for exch in sorted(exchange_totals.keys()):
+            ex = exchange_totals[exch]
+            fee_pct = (ex["total_fee"] / ex["volume"] * 100) if ex["volume"] > 0 else 0
+            exch_rows.append(html.Tr([
+                html.Td(exch.replace("_", " ").title(), style={"color": COLORS["text"]}),
+                html.Td(str(ex["trades"]), style={"color": COLORS["text"], "textAlign": "right"}),
+                html.Td(f"${ex['volume']:,.0f}", style={"color": COLORS["text"], "textAlign": "right"}),
+                html.Td(f"${ex['total_fee']:.2f}", style={
+                    "color": COLORS["red"], "textAlign": "right", "fontWeight": "bold"}),
+                html.Td(f"{fee_pct:.4f}%", style={"color": COLORS["muted"], "textAlign": "right"}),
+            ]))
+
+        exchange_table = dbc.Card(dbc.CardBody([
+            html.H5([html.I(className="bi bi-globe me-2"), "Gebyrer pr. børs"],
+                     style={"color": COLORS["accent"]}, className="mb-3"),
+            html.Table([
+                html.Thead(html.Tr([
+                    html.Th("Børs", style={"color": COLORS["muted"]}),
+                    html.Th("Handler", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Volumen", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Gebyr i alt", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Gebyr %", style={"color": COLORS["muted"], "textAlign": "right"}),
+                ])),
+                html.Tbody(exch_rows),
+            ], style={"width": "100%", "borderCollapse": "collapse"},
+               className="table table-dark table-sm table-hover"),
+        ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                   "borderRadius": "8px"}, className="mb-3")
+
+        # Grand total KPI
+        total_trades = len(trade_fees)
+        total_volume = sum(tf["qty"] * tf["exit_price"] for tf in trade_fees)
+        total_pnl = sum(tf["pnl"] for tf in trade_fees)
+        net_pnl = total_pnl - grand_total
+
+        kpi_row = dbc.Row([
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Totale gebyrer", style={"color": COLORS["muted"], "fontSize": "0.8rem"}, className="mb-1"),
+                html.H4(f"${grand_total:,.2f}", style={"color": COLORS["red"]}),
+            ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=3, className="mb-3"),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Handler i alt", style={"color": COLORS["muted"], "fontSize": "0.8rem"}, className="mb-1"),
+                html.H4(str(total_trades), style={"color": COLORS["text"]}),
+            ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=3, className="mb-3"),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Gns. gebyr/handel", style={"color": COLORS["muted"], "fontSize": "0.8rem"}, className="mb-1"),
+                html.H4(f"${grand_total / total_trades:.2f}" if total_trades else "$0",
+                         style={"color": COLORS["orange"]}),
+            ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=3, className="mb-3"),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Netto P&L (efter gebyr)", style={"color": COLORS["muted"], "fontSize": "0.8rem"}, className="mb-1"),
+                html.H4(f"${net_pnl:,.2f}",
+                         style={"color": COLORS["green"] if net_pnl >= 0 else COLORS["red"]}),
+            ]), style={"backgroundColor": COLORS["card"], "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=3, className="mb-3"),
+        ], className="mb-3")
+
+        table_content = html.Div([kpi_row, weekly_table, exchange_table])
+
+        return (
+            dcc.send_string(buf.getvalue(), filename),
+            table_content,
+            html.Span(
+                f"Gebyrrapport: {total_trades} handler, ${grand_total:,.2f} i gebyrer.",
+                style={"color": COLORS["green"]}),
+        )
+    except Exception as e:
+        logger.warning(f"Fee report generation failed: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
+        return dash.no_update, dash.no_update, html.Span(
+            f"Gebyrrapport fejl: {e}", style={"color": COLORS["red"]})
+
+
+# ══════════════════════════════════════════════════════════════
+#  Weekend Crypto Rollover Approval Modal
+# ══════════════════════════════════════════════════════════════
+
+
+@callback(
+    Output("weekend-approval-modal", "is_open"),
+    Output("weekend-approval-body", "children"),
+    Input("weekend-approval-poll", "n_intervals"),
+    Input("btn-weekend-approve", "n_clicks"),
+    Input("btn-weekend-reject", "n_clicks"),
+    prevent_initial_call=True,
+)
+def _weekend_approval_handler(n_intervals, approve_clicks, reject_clicks):
+    """Poll for pending weekend approval and handle accept/reject."""
+    from dash import ctx
+    from src.ops.weekend_approval import (
+        get_approval_state, approve, reject, is_pending,
+    )
+
+    triggered = ctx.triggered_id
+
+    if triggered == "btn-weekend-approve":
+        approve()
+        return False, dash.no_update
+
+    if triggered == "btn-weekend-reject":
+        reject()
+        return False, dash.no_update
+
+    # Polling — check if there's a pending approval
+    if not is_pending():
+        return False, dash.no_update
+
+    state = get_approval_state()
+    est_fees = state.get("estimated_fees", 0)
+    crypto_alloc = state.get("crypto_allocation_pct", 60)
+    positions = state.get("positions_to_close", [])
+    crypto_symbols = state.get("crypto_symbols", [])
+    reopen = state.get("reopen_info", "?")
+
+    # Build position close table
+    pos_rows = []
+    close_fees_total = 0.0
+    for p in positions:
+        fee = p.get("close_fee", 0)
+        close_fees_total += fee
+        pos_rows.append(html.Tr([
+            html.Td(p.get("symbol", ""), style={"color": COLORS["text"]}),
+            html.Td(p.get("exchange", "").replace("_", " ").title(),
+                     style={"color": COLORS["muted"], "fontSize": "0.85rem"}),
+            html.Td(f"{p.get('qty', 0):.1f}", style={"color": COLORS["text"], "textAlign": "right"}),
+            html.Td(f"${p.get('price', 0):,.2f}", style={"color": COLORS["text"], "textAlign": "right"}),
+            html.Td(f"${fee:.2f}", style={"color": COLORS["orange"], "textAlign": "right"}),
+        ]))
+
+    crypto_entry_fees = est_fees - close_fees_total
+    crypto_exit_est = crypto_entry_fees  # symmetric estimate
+
+    body = html.Div([
+        # Warning banner
+        dbc.Alert([
+            html.I(className="bi bi-exclamation-triangle me-2"),
+            html.Strong("Alle børser er lukket. "),
+            "Weekend crypto-rotation kræver din godkendelse.",
+        ], color="warning", className="mb-3"),
+
+        # Fee summary KPIs
+        dbc.Row([
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Estimerede gebyrer", className="mb-1",
+                       style={"color": COLORS["muted"], "fontSize": "0.8rem"}),
+                html.H4(f"${est_fees:,.2f}", style={"color": COLORS["red"]}),
+            ]), style={"backgroundColor": "#1e2130", "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=4),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Crypto allokering", className="mb-1",
+                       style={"color": COLORS["muted"], "fontSize": "0.8rem"}),
+                html.H4(f"{crypto_alloc}%", style={"color": COLORS["accent"]}),
+            ]), style={"backgroundColor": "#1e2130", "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=4),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Positioner lukkes", className="mb-1",
+                       style={"color": COLORS["muted"], "fontSize": "0.8rem"}),
+                html.H4(str(len(positions)), style={"color": COLORS["orange"]}),
+            ]), style={"backgroundColor": "#1e2130", "border": f"1px solid {COLORS['border']}",
+                       "borderRadius": "8px", "textAlign": "center"}), md=4),
+        ], className="mb-3"),
+
+        # Fee breakdown
+        html.H6("Gebyrfordeling", style={"color": COLORS["text"]}, className="mt-3"),
+        html.Table([
+            html.Tbody([
+                html.Tr([
+                    html.Td("Lukning af aktie/futures-positioner:",
+                             style={"color": COLORS["muted"]}),
+                    html.Td(f"${close_fees_total:,.2f}",
+                             style={"color": COLORS["orange"], "textAlign": "right", "fontWeight": "bold"}),
+                ]),
+                html.Tr([
+                    html.Td("Crypto entry (fredag):",
+                             style={"color": COLORS["muted"]}),
+                    html.Td(f"${crypto_entry_fees / 2:,.2f}",
+                             style={"color": COLORS["orange"], "textAlign": "right", "fontWeight": "bold"}),
+                ]),
+                html.Tr([
+                    html.Td("Crypto exit (mandag):",
+                             style={"color": COLORS["muted"]}),
+                    html.Td(f"${crypto_entry_fees / 2:,.2f}",
+                             style={"color": COLORS["orange"], "textAlign": "right", "fontWeight": "bold"}),
+                ]),
+                html.Tr([
+                    html.Td(html.Strong("I alt:", style={"color": COLORS["text"]})),
+                    html.Td(html.Strong(f"${est_fees:,.2f}"),
+                             style={"color": COLORS["red"], "textAlign": "right"}),
+                ], style={"borderTop": f"1px solid {COLORS['border']}"}),
+            ]),
+        ], style={"width": "100%"}, className="mb-3"),
+
+        # Positions to close
+        html.H6(f"Positioner der lukkes ({len(positions)})", style={"color": COLORS["text"]},
+                 className="mt-3") if positions else html.Div(),
+        html.Div(
+            html.Table([
+                html.Thead(html.Tr([
+                    html.Th("Symbol", style={"color": COLORS["muted"]}),
+                    html.Th("Børs", style={"color": COLORS["muted"]}),
+                    html.Th("Antal", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Pris", style={"color": COLORS["muted"], "textAlign": "right"}),
+                    html.Th("Gebyr", style={"color": COLORS["muted"], "textAlign": "right"}),
+                ])),
+                html.Tbody(pos_rows),
+            ], className="table table-dark table-sm", style={"width": "100%"}),
+            style={"maxHeight": "200px", "overflowY": "auto"},
+        ) if positions else html.Div(),
+
+        # Crypto targets
+        html.H6("Crypto-mål", style={"color": COLORS["text"]}, className="mt-3"),
+        html.P(
+            ", ".join(crypto_symbols) if crypto_symbols else "BTC-USD, ETH-USD, SOL-USD, BNB-USD",
+            style={"color": COLORS["accent"], "fontSize": "0.9rem"},
+        ),
+
+        # Reopen info
+        html.P([
+            html.I(className="bi bi-clock me-2"),
+            f"Næste børsåbning: {reopen}",
+        ], style={"color": COLORS["muted"], "fontSize": "0.85rem"}, className="mt-2 mb-0"),
+    ])
+
+    return True, body
 
 
 # ══════════════════════════════════════════════════════════════
@@ -8762,5 +9238,5 @@ if __name__ == "__main__":
     app.run(
         host=settings.dashboard.host,
         port=settings.dashboard.port,
-        debug=True,
+        debug=os.getenv("DASH_DEBUG", "false").lower() == "true",
     )

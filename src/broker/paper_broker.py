@@ -27,6 +27,7 @@ from src.broker.models import (
     OrderValidationError,
 )
 from src.data.market_data import MarketDataFetcher
+from src.fees.fee_calculator import FeeCalculator
 from src.risk.portfolio_tracker import PortfolioTracker, Position
 
 
@@ -43,12 +44,14 @@ class PaperBroker(BaseBroker):
         initial_capital: float = 100_000,
         market_data: MarketDataFetcher | None = None,
         portfolio: PortfolioTracker | None = None,
+        broker_fees: str = "paper",
     ) -> None:
         self._initial_capital = initial_capital
         self._market_data = market_data or MarketDataFetcher()
         self._portfolio = portfolio or PortfolioTracker(initial_capital)
         self._orders: dict[str, Order] = {}
         self._pending_orders: list[str] = []
+        self._fee_calc = FeeCalculator(broker=broker_fees)
 
     @property
     def name(self) -> str:
@@ -237,15 +240,20 @@ class PaperBroker(BaseBroker):
             raise BrokerError(f"Kunne ikke hente pris for {symbol}: {exc}") from exc
 
     def _fill_buy(self, order: Order, price: float) -> None:
-        """Fyld en købsordre."""
-        cost = order.qty * price
+        """Fyld en købsordre med realistiske handelsomkostninger."""
+        fee = self._fee_calc.calculate(order.symbol, "buy", order.qty, price)
+        cost = order.qty * price + fee.total
         if cost > self._portfolio.cash:
             order.status = OrderStatus.REJECTED
             order.error_message = (
-                f"Ikke nok kontanter: kræver ${cost:,.2f}, "
+                f"Ikke nok kontanter: kræver ${cost:,.2f} "
+                f"(inkl. ${fee.total:,.2f} gebyr), "
                 f"har ${self._portfolio.cash:,.2f}"
             )
             raise InsufficientFundsError(order.error_message)
+
+        # Deduct fees from cash
+        self._portfolio.cash -= fee.total
 
         self._portfolio.open_position(
             symbol=order.symbol,
@@ -259,14 +267,17 @@ class PaperBroker(BaseBroker):
         order.filled_qty = order.qty
         order.filled_avg_price = price
         order.filled_at = datetime.now().isoformat()
+        order.fees = fee.total
 
         logger.info(
             f"[paper] KØB {order.qty} {order.symbol} @ ${price:.2f} "
-            f"(${cost:,.2f})"
+            f"(${cost:,.2f} inkl. gebyr ${fee.total:.2f})"
         )
 
     def _fill_sell(self, order: Order, price: float) -> None:
-        """Fyld en salgsordre (supports partial sells)."""
+        """Fyld en salgsordre (supports partial sells) med realistiske omkostninger."""
+        fee = self._fee_calc.calculate(order.symbol, "sell", order.qty, price)
+
         self._portfolio.close_position(
             symbol=order.symbol,
             price=price,
@@ -275,15 +286,19 @@ class PaperBroker(BaseBroker):
             qty=order.qty,
         )
 
+        # Deduct fees from cash
+        self._portfolio.cash -= fee.total
+
         order.status = OrderStatus.FILLED
         order.filled_qty = order.qty
         order.filled_avg_price = price
         order.filled_at = datetime.now().isoformat()
+        order.fees = fee.total
 
         proceeds = order.qty * price
         logger.info(
             f"[paper] SÆLG {order.qty} {order.symbol} @ ${price:.2f} "
-            f"(${proceeds:,.2f})"
+            f"(${proceeds:,.2f} minus gebyr ${fee.total:.2f})"
         )
 
     def _fill_short_open(self, order: Order, price: float) -> None:

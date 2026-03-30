@@ -228,8 +228,10 @@ class ChartPatternDetector:
 
     def _volume_confirms(self, df: pd.DataFrame, idx: int, direction: str) -> bool:
         """Tjek om volumen bekræfter mønsteret."""
+        # H-17: Copy to avoid mutating caller's DataFrame (thread-safety)
         if "Volume_Ratio" not in df.columns:
             if "Volume" in df.columns and "Volume_SMA" not in df.columns:
+                df = df.copy()
                 add_volume_analysis(df)
             else:
                 return False
@@ -1012,6 +1014,8 @@ class DivergenceDetector:
         order: int = 5,
     ) -> list[DivergenceSignal]:
         """Detektér divergenser på RSI, MACD, MFI og OBV."""
+        # H-17: Copy to avoid mutating caller's DataFrame (thread-safety)
+        df = df.copy()
         divergences = []
 
         # Sørg for at indikatorerne er beregnet

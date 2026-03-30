@@ -15,7 +15,6 @@ genstartes uden tab.
 from __future__ import annotations
 
 import io
-import pickle
 import signal
 import sqlite3
 import threading
@@ -138,7 +137,9 @@ class IndicatorStore:
             """)
 
     def save(self, symbol: str, interval: str, df: pd.DataFrame) -> None:
-        blob = pickle.dumps(df)
+        buf = io.BytesIO()
+        df.to_parquet(buf, engine="pyarrow")
+        blob = buf.getvalue()
         now = datetime.now(tz=None).isoformat()
         with self._get_conn() as conn:
             conn.execute(
@@ -159,7 +160,7 @@ class IndicatorStore:
 
         if row is None:
             return None
-        return pickle.loads(row[0])
+        return pd.read_parquet(io.BytesIO(row[0]))
 
     def load_all(self, interval: str = "1d") -> dict[str, pd.DataFrame]:
         with self._get_conn() as conn:
@@ -169,7 +170,7 @@ class IndicatorStore:
             ).fetchall()
 
         return {
-            symbol: pickle.loads(blob)
+            symbol: pd.read_parquet(io.BytesIO(blob))
             for symbol, blob in rows
         }
 

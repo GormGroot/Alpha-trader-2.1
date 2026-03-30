@@ -44,6 +44,7 @@ class Order:
     limit_price: float | None = None
     filled_qty: float = 0.0
     filled_avg_price: float = 0.0
+    fees: float = 0.0
     submitted_at: str = ""
     filled_at: str = ""
     error_message: str = ""

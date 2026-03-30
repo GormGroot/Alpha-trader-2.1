@@ -72,10 +72,12 @@ def add_rsi(df: pd.DataFrame, period: int = 14, column: str = "Close") -> pd.Dat
     avg_loss = losses.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
     # Håndtér division med nul: kun gains → RSI=100, kun losses → RSI=0
+    # Flat prices (no gains AND no losses) → RSI=50 (neutral)
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     rsi = rsi.where(avg_loss > 0, 100.0)
     rsi = rsi.where(avg_gain > 0, 0.0)
+    rsi = rsi.where((avg_gain > 0) | (avg_loss > 0), 50.0)
     df["RSI"] = rsi
     return df
 
@@ -713,7 +715,10 @@ def calc_volume_profile(
     low_idx = poc_idx - 1
     high_idx = poc_idx + 1
 
-    while accumulated < target_volume:
+    max_iterations = 2 * num_bins  # guard against infinite loop
+    iterations = 0
+    while accumulated < target_volume and iterations < max_iterations:
+        iterations += 1
         add_low = volume_at_price[low_idx] if low_idx >= 0 else 0
         add_high = volume_at_price[high_idx] if high_idx < num_bins else 0
 

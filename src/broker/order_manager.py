@@ -15,7 +15,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -378,22 +378,30 @@ class OrderManager:
         end_date: str | None = None,
     ) -> list[UnifiedOrder]:
         """Hent ordrehistorik med filtrering."""
+        # Column names are whitelisted constants — never from user input
+        _ALLOWED_FILTERS = {"symbol", "broker_name", "status", "created_at"}
+
         query = "SELECT * FROM orders WHERE 1=1"
         params: list[Any] = []
 
         if symbol:
+            assert "symbol" in _ALLOWED_FILTERS
             query += " AND symbol = ?"
             params.append(symbol.upper())
         if broker:
+            assert "broker_name" in _ALLOWED_FILTERS
             query += " AND broker_name = ?"
             params.append(broker.lower())
         if status:
+            assert "status" in _ALLOWED_FILTERS
             query += " AND status = ?"
             params.append(status.lower())
         if start_date:
+            assert "created_at" in _ALLOWED_FILTERS
             query += " AND created_at >= ?"
             params.append(start_date)
         if end_date:
+            assert "created_at" in _ALLOWED_FILTERS
             query += " AND created_at <= ?"
             params.append(end_date)
 
@@ -431,9 +439,7 @@ class OrderManager:
 
     def get_statistics(self, days: int = 30) -> dict[str, Any]:
         """Ordre-statistik for de seneste N dage."""
-        cutoff = datetime.now().replace(
-            hour=0, minute=0, second=0
-        ).isoformat()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
 
         with sqlite3.connect(self._db_path) as conn:
             # Total orders

@@ -113,19 +113,23 @@ def setup_brokers(paper: bool = False) -> object:
     except Exception as e:
         logger.warning(f"[startup] Saxo failed: {e}")
 
-    # 3. IBKR
-    try:
-        from src.broker.ibkr_broker import IBKRBroker
-        ibkr_host = os.getenv("IBKR_HOST", "127.0.0.1")
-        ibkr_port = int(os.getenv("IBKR_PORT", "7497" if paper else "7496"))
-        ibkr_client = int(os.getenv("IBKR_CLIENT_ID", "1"))
-        ibkr = IBKRBroker(host=ibkr_host, port=ibkr_port, client_id=ibkr_client)
-        ibkr.connect()
-        router.register("ibkr", ibkr)
-        active_brokers.append("ibkr")
-        logger.info(f"[startup] IBKR connected ({ibkr_host}:{ibkr_port})")
-    except Exception as e:
-        logger.debug(f"[startup] IBKR not available: {e}")
+    # 3. IBKR (only if explicitly enabled via IBKR_ENABLED env var)
+    ibkr_enabled = os.getenv("IBKR_ENABLED", "false").lower() in ("true", "1", "yes")
+    if ibkr_enabled:
+        try:
+            from src.broker.ibkr_broker import IBKRBroker
+            ibkr_host = os.getenv("IBKR_HOST", "127.0.0.1")
+            ibkr_port = int(os.getenv("IBKR_PORT", "7497" if paper else "7496"))
+            ibkr_client = int(os.getenv("IBKR_CLIENT_ID", "1"))
+            ibkr = IBKRBroker(host=ibkr_host, port=ibkr_port, client_id=ibkr_client)
+            ibkr.connect(timeout=10)
+            router.register("ibkr", ibkr)
+            active_brokers.append("ibkr")
+            logger.info(f"[startup] IBKR connected ({ibkr_host}:{ibkr_port})")
+        except Exception as e:
+            logger.debug(f"[startup] IBKR not available: {e}")
+    else:
+        logger.debug("[startup] IBKR: not enabled (set IBKR_ENABLED=true to connect)")
 
     # 4. Nordnet
     try:
@@ -169,9 +173,9 @@ def setup_connection_monitor(router: object) -> object | None:
         from src.ops.email_reports import EmailReportRunner
         reporter = EmailReportRunner()
 
-        def on_status_change(broker_name: str, old_status: str, new_status: str) -> None:
-            if new_status == "disconnected":
-                reporter.alarm.broker_disconnected(broker_name)
+        def on_status_change(change) -> None:
+            if change.new_status.value == "disconnected":
+                reporter.alarm.broker_disconnected(change.broker_name)
 
         cm.on_status_change(on_status_change)
         cm.start(interval=60)
@@ -323,7 +327,10 @@ def setup_scheduler_with_auto_trader(auto_trader=None) -> object | None:
 
         # Start continuous scan loop (hvert 15. minut under markedstid)
         if auto_trader is not None:
-            scan_thread = start_continuous_scanner(auto_trader, interval_minutes=1)
+            scan_thread, scan_stop_event = start_continuous_scanner(auto_trader, interval_minutes=1)
+            # Store thread + stop_event on scheduler for graceful shutdown (H-19)
+            scheduler._scan_thread = scan_thread
+            scheduler._scan_stop_event = scan_stop_event
             logger.info("[startup] Continuous scanner started (1 min interval — LIVE mode)")
 
         return scheduler
@@ -332,9 +339,12 @@ def setup_scheduler_with_auto_trader(auto_trader=None) -> object | None:
         return None
 
 
-def start_continuous_scanner(auto_trader, interval_minutes: int = 1) -> threading.Thread:
+def start_continuous_scanner(auto_trader, interval_minutes: int = 1) -> tuple[threading.Thread, threading.Event]:
     """
     Kør AutoTrader scan hvert N. minut — 24/7 global market coverage.
+
+    Returns (thread, stop_event) so the caller can stop the scanner
+    gracefully by calling stop_event.set().
 
     Bruger MarketCalendar til at bestemme hvilke markeder der er åbne.
     Scanner kører altid på handelsdage — MarketCalendar filtrerer symboler.
@@ -350,9 +360,9 @@ def start_continuous_scanner(auto_trader, interval_minutes: int = 1) -> threadin
       22:00 - 02:00  US Post-market
       24/7           Crypto
     """
-    import gc
     import threading
     from src.ops.daily_scheduler import is_market_day
+    from src.broker.broker_router import _CRYPTO_PATTERN
 
     _stop = threading.Event()
 
@@ -389,9 +399,17 @@ def start_continuous_scanner(auto_trader, interval_minutes: int = 1) -> threadin
                 # Weekend — kun crypto scanner hvert 5. minut
                 try:
                     logger.debug(f"[scanner] Weekend — kun crypto scan {now:%H:%M}")
-                    result = auto_trader.scan_and_trade()
-                    if result.trades_executed > 0:
-                        logger.info(f"[scanner] Crypto: {result.trades_executed} handler")
+                    # Filter to crypto-only symbols for weekend scanning
+                    crypto_symbols = [
+                        s for s in auto_trader.watchlist
+                        if _CRYPTO_PATTERN.match(s.upper())
+                    ]
+                    if crypto_symbols:
+                        result = auto_trader.scan_and_trade(symbols=crypto_symbols)
+                        if result.trades_executed > 0:
+                            logger.info(f"[scanner] Crypto: {result.trades_executed} handler")
+                    else:
+                        logger.debug("[scanner] Weekend — ingen crypto symboler i watchlist")
                 except Exception as e:
                     logger.error(f"[scanner] Weekend scan fejl: {e}")
                 _stop.wait(timeout=300)
@@ -402,7 +420,7 @@ def start_continuous_scanner(auto_trader, interval_minutes: int = 1) -> threadin
         daemon=True,
     )
     thread.start()
-    return thread
+    return thread, _stop
 
 
 def run_trader(args: argparse.Namespace) -> None:
@@ -441,11 +459,13 @@ def run_trader(args: argparse.Namespace) -> None:
     # 5b. Continuous Learning Engine — already started inside AutoTrader.__init__
     # (removed duplicate instance that was leaking memory)
 
-    # 6. Order Manager
+    # 6. Order Manager — register globally so dashboard can access it (H-20)
     try:
         from src.broker.order_manager import OrderManager
+        from src.broker.registry import set_order_manager
         order_mgr = OrderManager(router=router)
-        logger.info("[startup] OrderManager ready")
+        set_order_manager(order_mgr)
+        logger.info("[startup] OrderManager ready (registered in global registry)")
     except Exception as e:
         logger.warning(f"[startup] OrderManager failed: {e}")
 
@@ -469,18 +489,32 @@ def run_trader(args: argparse.Namespace) -> None:
         )
     else:
         # Keep running without dashboard (headless mode)
+        shutdown_event = getattr(args, '_shutdown_event', None)
         logger.info("[startup] Running in headless mode (no dashboard)")
         logger.info("[startup] Press Ctrl+C to stop")
         try:
-            while True:
-                time.sleep(1)
+            if shutdown_event:
+                shutdown_event.wait()
+            else:
+                while True:
+                    time.sleep(1)
         except KeyboardInterrupt:
             pass
 
-    # Cleanup
+    # Cleanup (always runs — shutdown_handler sets event instead of sys.exit)
     if auto_trader and getattr(auto_trader, '_learner', None):
         auto_trader._learner.stop()
     if scheduler:
+        # Stop the continuous scanner gracefully if running
+        scan_stop = getattr(scheduler, '_scan_stop_event', None)
+        if scan_stop:
+            scan_stop.set()
+            logger.info("[shutdown] Continuous scanner stop signal sent")
+            # Wait for scanner thread to finish (H-19)
+            scan_thread = getattr(scheduler, '_scan_thread', None)
+            if scan_thread and scan_thread.is_alive():
+                scan_thread.join(timeout=10)
+                logger.info("[shutdown] Continuous scanner thread joined")
         scheduler.stop()
     if cm:
         cm.stop()
@@ -561,13 +595,18 @@ def main() -> None:
     # Logging
     setup_logging(level=args.log_level)
 
-    # Graceful shutdown
+    # Graceful shutdown via event flag (avoids sys.exit skipping cleanup)
+    shutdown_event = threading.Event()
+
     def shutdown_handler(signum, frame):
         logger.info(f"[shutdown] Signal {signum} received — shutting down")
-        sys.exit(0)
+        shutdown_event.set()
 
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # Make shutdown_event available to run_trader for its main loop
+    args._shutdown_event = shutdown_event
 
     # Route to mode
     if args.mode == "trader":

@@ -1,5 +1,5 @@
 {
-  "max_position_pct": 20.0,
-  "max_exposure_pct": 80.0,
+  "max_position_pct": 0.15,
+  "max_exposure_pct": 0.80,
   "max_dkk_per_symbol": 5000
 }

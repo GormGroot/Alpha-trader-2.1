@@ -170,6 +170,7 @@ class SaxoBroker(BaseBroker):
         endpoint: str,
         params: dict | None = None,
         json_data: dict | None = None,
+        _retries: int = 3,
     ) -> dict:
         """
         Authenticated HTTP request til Saxo OpenAPI.
@@ -193,11 +194,15 @@ class SaxoBroker(BaseBroker):
             )
 
             if response.status_code == 429:
-                # Rate limited — vent og retry
+                # Rate limited — vent og retry (with bounded retries)
+                if _retries <= 0:
+                    raise BrokerError(
+                        f"Saxo API rate limit (429) exceeded after max retries"
+                    )
                 retry_after = int(response.headers.get("Retry-After", "5"))
-                logger.warning(f"[saxo] Rate limited — venter {retry_after}s")
+                logger.warning(f"[saxo] Rate limited — venter {retry_after}s (retries left: {_retries - 1})")
                 time.sleep(retry_after)
-                return self._request(method, endpoint, params, json_data)
+                return self._request(method, endpoint, params, json_data, _retries=_retries - 1)
 
             if response.status_code == 401:
                 # Token expired — refresh og retry
@@ -388,8 +393,11 @@ class SaxoBroker(BaseBroker):
         qty: float,
         order_type: OrderType = OrderType.MARKET,
         limit_price: float | None = None,
+        short: bool = False,
     ) -> Order:
         """Placér en salgsordre via Saxo OpenAPI."""
+        if short:
+            raise NotImplementedError("Short-selling not yet implemented for this broker")
         self._validate_order(symbol, qty, order_type, limit_price)
         instrument = self._resolve_instrument(symbol)
 

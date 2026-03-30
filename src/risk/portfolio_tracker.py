@@ -33,13 +33,16 @@ class Position:
     entry_price: float
     entry_time: str
     current_price: float = 0.0
-    peak_price: float = 0.0    # højeste pris siden entry (til trailing stop)
+    peak_price: float = 0.0    # højeste pris siden entry (til trailing stop for longs)
+    trough_price: float = 0.0  # laveste pris siden entry (til trailing stop for shorts)
 
     def __post_init__(self) -> None:
         if self.current_price == 0.0:
             self.current_price = self.entry_price
         if self.peak_price == 0.0:
             self.peak_price = self.entry_price
+        if self.trough_price == 0.0:
+            self.trough_price = self.entry_price
 
     @property
     def market_value(self) -> float:
@@ -63,15 +66,26 @@ class Position:
 
     @property
     def pct_from_peak(self) -> float:
-        """Fald fra peak-pris (til trailing stop)."""
-        if self.peak_price == 0:
-            return 0.0
-        return (self.peak_price - self.current_price) / self.peak_price
+        """Adverse move from best price (til trailing stop).
+
+        For long positions: percentage drop from highest price (peak).
+        For short positions: percentage rise from lowest price (trough).
+        """
+        if self.side == "short":
+            if self.trough_price == 0:
+                return 0.0
+            return (self.current_price - self.trough_price) / self.trough_price
+        else:
+            if self.peak_price == 0:
+                return 0.0
+            return (self.peak_price - self.current_price) / self.peak_price
 
     def update_price(self, price: float) -> None:
         self.current_price = price
         if price > self.peak_price:
             self.peak_price = price
+        if price < self.trough_price:
+            self.trough_price = price
 
 
 @dataclass
@@ -128,7 +142,8 @@ class PortfolioDB:
                     entry_price REAL NOT NULL,
                     entry_time TEXT NOT NULL,
                     current_price REAL NOT NULL,
-                    peak_price REAL NOT NULL
+                    peak_price REAL NOT NULL,
+                    trough_price REAL NOT NULL DEFAULT 0.0
                 );
                 CREATE TABLE IF NOT EXISTS closed_trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +163,11 @@ class PortfolioDB:
                     timestamp TEXT NOT NULL
                 );
             """)
+            # Migration: add trough_price column if missing (existing DBs)
+            try:
+                conn.execute("ALTER TABLE open_positions ADD COLUMN trough_price REAL NOT NULL DEFAULT 0.0")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
     # ── State (cash, peak, daily start) ───────────────────────
 
@@ -176,10 +196,10 @@ class PortfolioDB:
         with self._conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO open_positions "
-                "(symbol, side, qty, entry_price, entry_time, current_price, peak_price) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(symbol, side, qty, entry_price, entry_time, current_price, peak_price, trough_price) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (pos.symbol, pos.side, pos.qty, pos.entry_price,
-                 pos.entry_time, pos.current_price, pos.peak_price),
+                 pos.entry_time, pos.current_price, pos.peak_price, pos.trough_price),
             )
 
     def delete_position(self, symbol: str):
@@ -195,6 +215,7 @@ class PortfolioDB:
                 symbol=row[0], side=row[1], qty=row[2],
                 entry_price=row[3], entry_time=row[4],
                 current_price=row[5], peak_price=row[6],
+                trough_price=row[7] if len(row) > 7 else row[3],
             )
             positions[row[0]] = pos
         return positions

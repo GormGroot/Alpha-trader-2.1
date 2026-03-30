@@ -10,6 +10,7 @@ Understøtter:
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -41,6 +42,8 @@ class MarketDataFetcher:
         self._last_request_time: float = 0.0
         self._session = None  # reusable HTTP session
         self._session_call_count: int = 0
+        self._session_lock = threading.Lock()
+        self._db_write_lock = threading.Lock()
 
         cache_path = Path(cache_dir or settings.market_data.cache_dir)
         cache_path.mkdir(parents=True, exist_ok=True)
@@ -49,27 +52,30 @@ class MarketDataFetcher:
 
     def _get_ticker(self, symbol: str) -> yf.Ticker:
         """Create Ticker with shared session to reduce memory allocations."""
-        # Reset session every 200 calls to prevent connection/memory accumulation
-        self._session_call_count += 1
-        if self._session is not None and self._session_call_count >= 200:
-            try:
-                self._session.close()
-            except Exception:
-                pass
-            self._session = None
-            self._session_call_count = 0
+        with self._session_lock:
+            # Reset session every 200 calls to prevent connection/memory accumulation
+            self._session_call_count += 1
+            if self._session is not None and self._session_call_count >= 200:
+                try:
+                    self._session.close()
+                except Exception:
+                    pass
+                self._session = None
+                self._session_call_count = 0
 
-        t = yf.Ticker(symbol)
-        if self._session is None:
-            self._session = t.session
-        else:
-            t.session = self._session
-        return t
+            t = yf.Ticker(symbol)
+            if self._session is None:
+                self._session = t.session
+            else:
+                t.session = self._session
+            return t
 
     # ── Database ─────────────────────────────────────────────
 
     def _get_conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def _init_db(self) -> None:
         with self._get_conn() as conn:
@@ -146,15 +152,16 @@ class MarketDataFetcher:
             for idx, row in df.iterrows()
         ]
 
-        with self._get_conn() as conn:
-            conn.executemany(
-                """
-                INSERT OR REPLACE INTO ohlcv
-                    (symbol, interval, date, open, high, low, close, volume, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows,
-            )
+        with self._db_write_lock:
+            with self._get_conn() as conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO ohlcv
+                        (symbol, interval, date, open, high, low, close, volume, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
         logger.debug(f"Cached {len(rows)} rows for {symbol} ({interval})")
 
     # ── Public API ───────────────────────────────────────────

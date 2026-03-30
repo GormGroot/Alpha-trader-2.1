@@ -13,7 +13,7 @@ from pathlib import Path
 from functools import lru_cache
 
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -95,7 +95,7 @@ class StrategySettings(BaseSettings):
     rsi_overbought: int = _strategy_yaml.get("rsi", {}).get("overbought", 70)
     rsi_oversold: int = _strategy_yaml.get("rsi", {}).get("oversold", 30)
     bb_window: int = _strategy_yaml.get("bollinger", {}).get("window", 20)
-    bb_num_std: int = _strategy_yaml.get("bollinger", {}).get("num_std", 2)
+    bb_num_std: float = _strategy_yaml.get("bollinger", {}).get("num_std", 2.0)
 
     model_config = SettingsConfigDict(
         env_prefix="STRATEGY_",
@@ -115,6 +115,22 @@ class RiskSettings(BaseSettings):
     take_profit_pct: float = _risk_yaml.get("take_profit_pct", 0.05)
     trailing_stop_pct: float = _risk_yaml.get("trailing_stop_pct", 0.03)
     max_drawdown_pct: float = _risk_yaml.get("max_drawdown_pct", 0.10)
+
+    @model_validator(mode="after")
+    def validate_risk_ranges(self) -> "RiskSettings":
+        """Ensure stop_loss_pct is a decimal fraction in a sane range."""
+        if not (0.005 <= self.stop_loss_pct <= 0.10):
+            raise ValueError(
+                f"stop_loss_pct={self.stop_loss_pct} is out of range — "
+                f"must be between 0.005 (0.5%) and 0.10 (10%). "
+                f"Use decimal notation, e.g. 0.015 for 1.5%."
+            )
+        if self.stop_loss_pct > 1.0 or self.max_position_pct > 1.0:
+            raise ValueError(
+                "Risk percentages must be in decimal notation (e.g. 0.02 not 2.0). "
+                f"Got stop_loss_pct={self.stop_loss_pct}, max_position_pct={self.max_position_pct}"
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_prefix="RISK_",
@@ -293,6 +309,20 @@ class Settings:
 def get_settings() -> Settings:
     """Returnér cached settings-instans."""
     return Settings()
+
+
+def reload_settings() -> Settings:
+    """Clear the settings cache and return a fresh Settings instance.
+
+    Use this when config files or environment variables have changed
+    and you need the updated values.
+    """
+    get_settings.cache_clear()
+    fresh = get_settings()
+    # Update the module-level convenience reference
+    global settings
+    settings = fresh
+    return fresh
 
 
 # Convenience – importér direkte: from config.settings import settings

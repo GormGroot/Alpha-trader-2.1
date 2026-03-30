@@ -149,8 +149,11 @@ class AlpacaBroker(BaseBroker):
         qty: float,
         order_type: OrderType = OrderType.MARKET,
         limit_price: float | None = None,
+        short: bool = False,
     ) -> Order:
         """Placér en salgsordre via Alpaca API."""
+        if short:
+            raise NotImplementedError("Short-selling not yet implemented for this broker")
         self._validate_order(symbol, qty, order_type, limit_price)
 
         alpaca_order = self._api.submit_order(

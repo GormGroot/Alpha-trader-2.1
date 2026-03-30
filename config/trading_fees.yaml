@@ -1,0 +1,330 @@
+# ============================================================
+# Trading Fees Configuration — Per Broker & Exchange
+# ============================================================
+# Realistic fee schedules for all supported brokers and exchanges.
+# Fees are applied automatically based on symbol suffix → exchange mapping.
+#
+# Structure per broker:
+#   commission_pct   : Percentage of trade value (0.001 = 0.1%)
+#   commission_min   : Minimum commission per order in local currency
+#   commission_max   : Maximum commission per order (0 = no max)
+#   spread_pct       : Simulated spread (bid-ask) cost
+#   currency         : Fee currency (for display/tax purposes)
+#   platform_fee     : Fixed monthly platform fee (informational)
+
+# ── Alpaca ──────────────────────────────────────────────────
+# Commission-free for US stocks/ETFs. Crypto has spread.
+alpaca:
+  us_stocks:
+    commission_pct: 0.0
+    commission_min: 0.0
+    commission_max: 0.0
+    spread_pct: 0.0003          # ~3 bps market impact
+    currency: USD
+  us_etfs:
+    commission_pct: 0.0
+    commission_min: 0.0
+    commission_max: 0.0
+    spread_pct: 0.0002
+    currency: USD
+  crypto:
+    commission_pct: 0.0015      # 0.15% taker fee
+    commission_min: 0.0
+    commission_max: 0.0
+    spread_pct: 0.001
+    currency: USD
+
+# ── Interactive Brokers (IBKR) ──────────────────────────────
+# Tiered pricing. Rates shown are typical retail tiered rates.
+ibkr:
+  us_stocks:
+    commission_pct: 0.00035     # $0.0035/share → ~0.035% on $10 stock
+    commission_min: 0.35        # USD 0.35 minimum
+    commission_max: 0.005       # 0.5% of trade value max
+    per_share: 0.0035           # Per-share pricing (used instead of pct)
+    spread_pct: 0.0002
+    currency: USD
+  us_etfs:
+    commission_pct: 0.00035
+    commission_min: 0.35
+    commission_max: 0.005
+    per_share: 0.0035
+    spread_pct: 0.0001
+    currency: USD
+  eu_stocks:                    # XETRA, Euronext, BME, MIL, LSE
+    commission_pct: 0.0005      # 0.05% of trade value
+    commission_min: 1.25        # EUR 1.25 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    currency: EUR
+  uk_stocks:                    # London Stock Exchange
+    commission_pct: 0.0005
+    commission_min: 1.00        # GBP 1.00 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    stamp_duty_pct: 0.005       # 0.5% UK stamp duty on buys
+    currency: GBP
+  nordic_stocks:                # OMX Copenhagen, Stockholm, Oslo, Helsinki
+    commission_pct: 0.0005      # 0.05%
+    commission_min: 1.25        # EUR 1.25 min
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: EUR
+  hk_stocks:                    # HKEX
+    commission_pct: 0.0008      # 0.08% of trade value
+    commission_min: 18.0        # HKD 18 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    stamp_duty_pct: 0.0013      # HK stamp duty 0.13%
+    currency: HKD
+  jp_stocks:                    # Tokyo Stock Exchange
+    commission_pct: 0.0005      # 0.05%
+    commission_min: 80.0        # JPY 80 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    currency: JPY
+  au_stocks:                    # ASX
+    commission_pct: 0.0008      # 0.08%
+    commission_min: 6.0         # AUD 6 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: AUD
+  in_stocks:                    # NSE India
+    commission_pct: 0.001       # 0.1%
+    commission_min: 20.0        # INR 20 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    stt_pct: 0.001              # Securities Transaction Tax 0.1% on sell
+    currency: INR
+  nz_stocks:                    # NZX
+    commission_pct: 0.001       # 0.1%
+    commission_min: 8.0         # NZD 8 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    currency: NZD
+  swiss_stocks:                 # SIX Swiss Exchange
+    commission_pct: 0.0005      # 0.05%
+    commission_min: 1.50        # CHF 1.50 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    stamp_duty_pct: 0.00075     # Swiss stamp duty 0.075%
+    currency: CHF
+  futures:                      # CME, CBOT, NYMEX
+    commission_pct: 0.0
+    commission_min: 0.0
+    per_contract: 0.85          # USD 0.85 per contract
+    spread_pct: 0.0002
+    exchange_fee: 1.60          # Exchange + clearing per contract
+    currency: USD
+  crypto:
+    commission_pct: 0.0018      # ~0.18% effective
+    commission_min: 1.75
+    commission_max: 0.0
+    spread_pct: 0.001
+    currency: USD
+
+# ── Saxo Bank ───────────────────────────────────────────────
+# Saxo Classic tier pricing (standard retail).
+saxo:
+  us_stocks:
+    commission_pct: 0.001       # 0.1% or USD 1 min
+    commission_min: 1.0
+    commission_max: 0.0
+    spread_pct: 0.0003
+    currency: USD
+  us_etfs:
+    commission_pct: 0.001
+    commission_min: 1.0
+    commission_max: 0.0
+    spread_pct: 0.0002
+    currency: USD
+  dk_stocks:                    # OMX Copenhagen
+    commission_pct: 0.001       # 0.1%
+    commission_min: 14.0        # DKK 14 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: DKK
+  se_stocks:                    # OMX Stockholm
+    commission_pct: 0.001       # 0.1%
+    commission_min: 14.0        # SEK 14 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: SEK
+  no_stocks:                    # Oslo Børs
+    commission_pct: 0.001       # 0.1%
+    commission_min: 14.0        # NOK 14 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: NOK
+  fi_stocks:                    # OMX Helsinki
+    commission_pct: 0.001       # 0.1%
+    commission_min: 2.0         # EUR 2 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: EUR
+  eu_stocks:                    # XETRA, Euronext, BME, MIL
+    commission_pct: 0.001       # 0.1%
+    commission_min: 2.0         # EUR 2 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    currency: EUR
+  uk_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 3.0         # GBP 3 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    stamp_duty_pct: 0.005       # 0.5% UK stamp duty on buys
+    currency: GBP
+  hk_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 15.0        # HKD 15 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    stamp_duty_pct: 0.0013
+    currency: HKD
+  jp_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 100.0       # JPY 100 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: JPY
+  au_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 7.0         # AUD 7 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: AUD
+  in_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 25.0        # INR 25 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    stt_pct: 0.001
+    currency: INR
+  nz_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 10.0        # NZD 10 minimum
+    commission_max: 0.0
+    spread_pct: 0.0005
+    currency: NZD
+  swiss_stocks:
+    commission_pct: 0.001       # 0.1%
+    commission_min: 2.0         # CHF 2 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    stamp_duty_pct: 0.00075
+    currency: CHF
+  futures:
+    commission_pct: 0.0
+    per_contract: 1.25          # USD per contract
+    spread_pct: 0.0003
+    exchange_fee: 1.60
+    currency: USD
+  crypto:
+    commission_pct: 0.001       # 0.1% (Saxo crypto ETNs)
+    commission_min: 3.0
+    commission_max: 0.0
+    spread_pct: 0.0015
+    currency: USD
+
+# ── Nordnet ─────────────────────────────────────────────────
+# Standard pricing for Nordic markets (non-monthly plan).
+nordnet:
+  dk_stocks:                    # OMX Copenhagen
+    commission_pct: 0.001       # 0.1% (Smart tier)
+    commission_min: 29.0        # DKK 29 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: DKK
+  se_stocks:                    # OMX Stockholm
+    commission_pct: 0.001       # 0.1%
+    commission_min: 39.0        # SEK 39 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: SEK
+  no_stocks:                    # Oslo Børs
+    commission_pct: 0.001       # 0.1%
+    commission_min: 39.0        # NOK 39 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: NOK
+  fi_stocks:                    # OMX Helsinki
+    commission_pct: 0.001       # 0.1%
+    commission_min: 5.0         # EUR 5 minimum
+    commission_max: 0.0
+    spread_pct: 0.0004
+    currency: EUR
+  us_stocks:
+    commission_pct: 0.0
+    commission_min: 0.0         # Free US trading (Nordnet markets)
+    commission_max: 0.0
+    spread_pct: 0.0003
+    fx_spread_pct: 0.0025       # 0.25% FX conversion DKK→USD
+    currency: USD
+  us_etfs:
+    commission_pct: 0.0
+    commission_min: 0.0
+    commission_max: 0.0
+    spread_pct: 0.0002
+    fx_spread_pct: 0.0025
+    currency: USD
+  eu_stocks:
+    commission_pct: 0.0015      # 0.15%
+    commission_min: 12.0        # EUR 12 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    currency: EUR
+  uk_stocks:
+    commission_pct: 0.0015      # 0.15%
+    commission_min: 8.0         # GBP 8 minimum
+    commission_max: 0.0
+    spread_pct: 0.0003
+    stamp_duty_pct: 0.005
+    currency: GBP
+
+# ── Paper Broker (Simulator) ───────────────────────────────
+# Configurable — set to realistic defaults matching Saxo (primary broker).
+paper:
+  default:
+    commission_pct: 0.001       # 0.1% — matches Saxo Classic
+    commission_min: 0.0         # No minimum in simulation
+    commission_max: 0.0
+    spread_pct: 0.0005          # 0.05% simulated spread
+    currency: USD
+
+# ── Symbol → Exchange Mapping ───────────────────────────────
+# Maps yfinance symbol suffixes to exchange categories.
+# Used to auto-select the correct fee schedule.
+exchange_mapping:
+  # No suffix → US stocks (default)
+  "": us_stocks
+  # Futures
+  "=F": futures
+  # Nordic
+  ".CO": dk_stocks
+  ".ST": se_stocks
+  ".OL": no_stocks
+  ".HE": fi_stocks
+  # EU
+  ".DE": eu_stocks        # XETRA (Germany)
+  ".PA": eu_stocks        # Euronext Paris
+  ".AS": eu_stocks        # Euronext Amsterdam
+  ".MC": eu_stocks        # BME (Spain)
+  ".MI": eu_stocks        # Borsa Italiana
+  # Switzerland
+  ".SW": swiss_stocks
+  # UK
+  ".L": uk_stocks
+  # Asia
+  ".HK": hk_stocks
+  ".T": jp_stocks
+  # Oceania
+  ".AX": au_stocks
+  ".NZ": nz_stocks
+  # India
+  ".NS": in_stocks
+  # Crypto
+  "-USD": crypto
+  # ETFs (US-listed, no suffix) — handled by ETF symbol list check
+  # VIX index
+  "^": us_stocks

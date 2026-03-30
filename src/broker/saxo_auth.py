@@ -128,20 +128,54 @@ class TokenData:
             return timedelta(0)
 
 
+try:
+    from cryptography.fernet import Fernet
+    _HAS_FERNET = True
+except ImportError:
+    _HAS_FERNET = False
+    logger.warning(
+        "[saxo-auth] cryptography package not installed — "
+        "token encryption disabled. Install with: pip install cryptography"
+    )
+
+
+def _derive_fernet_key(secret: str) -> bytes:
+    """Derive a Fernet-compatible 32-byte key from an arbitrary secret string."""
+    import hashlib
+    digest = hashlib.sha256(secret.encode()).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
 class TokenStore:
     """
     Encrypted token storage i lokal fil.
 
-    Bruger simpel base64-encoding + app_secret som XOR-key.
-    (For en single-user lokal platform er dette tilstrækkeligt.)
+    Uses cryptography.fernet.Fernet with a key derived from the app secret
+    (or machine-id as fallback). Falls back to base64-only if cryptography
+    is not installed.
     """
 
     def __init__(self, path: str = ".saxo_tokens", key: str = "") -> None:
         self._path = Path(path)
-        self._key = key or "alpha-vision-saxo-default-key"
+        secret = key or self._get_machine_id() or "alpha-vision-saxo-default-key"
+        self._fernet_key = _derive_fernet_key(secret)
+        if _HAS_FERNET:
+            self._fernet = Fernet(self._fernet_key)
+        else:
+            self._fernet = None
+
+    @staticmethod
+    def _get_machine_id() -> str:
+        """Try to read a stable machine identifier."""
+        for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                return Path(path).read_text().strip()
+            except OSError:
+                continue
+        return ""
 
     def save(self, tokens: TokenData) -> None:
-        """Gem tokens til disk (encoded)."""
+        """Gem tokens til disk (encrypted)."""
         data = json.dumps({
             "access_token": tokens.access_token,
             "refresh_token": tokens.refresh_token,
@@ -152,8 +186,10 @@ class TokenStore:
             "client_key": tokens.client_key,
             "last_refresh": tokens.last_refresh,
         })
-        encoded = self._encode(data)
+        encoded = self._encrypt(data)
         self._path.write_text(encoded)
+        # chmod 600 — owner read/write only
+        self._path.chmod(0o600)
         logger.debug(f"[saxo-auth] Tokens gemt til {self._path}")
 
     def load(self) -> TokenData | None:
@@ -162,7 +198,7 @@ class TokenStore:
             return None
         try:
             encoded = self._path.read_text()
-            data = json.loads(self._decode(encoded))
+            data = json.loads(self._decrypt(encoded))
             return TokenData(**data)
         except Exception as exc:
             logger.warning(f"[saxo-auth] Kunne ikke læse tokens: {exc}")
@@ -173,25 +209,19 @@ class TokenStore:
         if self._path.exists():
             self._path.unlink()
 
-    def _encode(self, data: str) -> str:
-        """Simpel encoding (base64 + XOR)."""
-        key_bytes = self._key.encode()
-        data_bytes = data.encode()
-        xored = bytes(
-            b ^ key_bytes[i % len(key_bytes)]
-            for i, b in enumerate(data_bytes)
-        )
-        return base64.b64encode(xored).decode()
+    def _encrypt(self, data: str) -> str:
+        """Encrypt data using Fernet (falls back to base64 if unavailable)."""
+        if self._fernet is not None:
+            return self._fernet.encrypt(data.encode()).decode()
+        # Fallback: base64 only (not secure, but preserves functionality)
+        return base64.b64encode(data.encode()).decode()
 
-    def _decode(self, encoded: str) -> str:
-        """Decode encoded data."""
-        key_bytes = self._key.encode()
-        xored = base64.b64decode(encoded.encode())
-        data_bytes = bytes(
-            b ^ key_bytes[i % len(key_bytes)]
-            for i, b in enumerate(xored)
-        )
-        return data_bytes.decode()
+    def _decrypt(self, encoded: str) -> str:
+        """Decrypt data using Fernet (falls back to base64 if unavailable)."""
+        if self._fernet is not None:
+            return self._fernet.decrypt(encoded.encode()).decode()
+        # Fallback: base64 only
+        return base64.b64decode(encoded.encode()).decode()
 
 
 # ── Saxo Auth Manager ──────────────────────────────────────

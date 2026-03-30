@@ -436,31 +436,48 @@ class BrokerRouter(BaseBroker):
 
         Summerer cash, equity og buying power fra alle brokers.
         Returnerer i USD som base currency (konvertering sker i AggregatedPortfolio).
+
+        WARNING: This is a raw sum without FX conversion. Brokers may report
+        in different currencies (USD, DKK, EUR, etc.), so the totals are
+        approximate when multiple currency accounts are active.
         """
         total_cash = 0.0
         total_equity = 0.0
         total_portfolio = 0.0
         total_buying_power = 0.0
         accounts_fetched = 0
+        currencies_seen: set[str] = set()
 
         for name, broker in self._brokers.items():
             try:
                 account = broker.get_account()
+                # WARNING: raw sum without FX conversion — values may be in
+                # different currencies (USD, DKK, EUR, etc.)
                 total_cash += account.cash
                 total_equity += account.equity
                 total_portfolio += account.portfolio_value
                 total_buying_power += account.buying_power
                 accounts_fetched += 1
+                if hasattr(account, "currency") and account.currency:
+                    currencies_seen.add(account.currency)
             except Exception as exc:
                 logger.warning(f"[router] Kontofejl fra {name}: {exc}")
 
+        mixed = len(currencies_seen) > 1
+        if mixed:
+            logger.warning(
+                f"[router] Aggregated account sums mix currencies: {currencies_seen}. "
+                f"Values are NOT FX-converted — treat as approximate."
+            )
+
         return AccountInfo(
-            account_id=f"router_aggregated_{accounts_fetched}_brokers",
+            account_id=f"router_aggregated_{accounts_fetched}_brokers"
+                       + ("_MIXED_CURRENCIES" if mixed else ""),
             cash=total_cash,
             portfolio_value=total_portfolio,
             buying_power=total_buying_power,
             equity=total_equity,
-            currency="USD",
+            currency="USD" if not mixed else f"MIXED({','.join(sorted(currencies_seen))})",
         )
 
     def get_order_status(self, order_id: str) -> Order:

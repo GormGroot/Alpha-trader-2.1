@@ -678,11 +678,13 @@ class AutoTrader:
                             rm_portfolio.open_position(
                                 symbol=sym,
                                 qty=getattr(pos, "qty", 0),
-                                entry_price=getattr(pos, "entry_price", 0),
+                                price=getattr(pos, "entry_price", 0),
                                 side=getattr(pos, "side", "long"),
                             )
-                        except Exception:
-                            pass
+                        except ValueError as ve:
+                            logger.warning(f"[auto] Position sync skipped for {sym}: {ve}")
+                        except Exception as e:
+                            logger.debug(f"[auto] Position sync error for {sym}: {e}")
         except Exception:
             pass
 

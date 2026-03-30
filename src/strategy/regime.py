@@ -210,14 +210,16 @@ class RegimeDetector:
         self._history: deque[RegimeResult] = deque(maxlen=500)
         self._shifts: deque[RegimeShift] = deque(maxlen=200)
         self._hmm_model = None
+        self._hmm_last_trained: datetime | None = None
+        self._hmm_retrain_days: int = 7
 
     @property
     def history(self) -> list[RegimeResult]:
-        return self._history
+        return list(self._history)
 
     @property
     def shifts(self) -> list[RegimeShift]:
-        return self._shifts
+        return list(self._shifts)
 
     @property
     def current_regime(self) -> MarketRegime | None:
@@ -615,13 +617,21 @@ class RegimeDetector:
             return None
 
         try:
-            if self._hmm_model is None:
+            # Retrain if model is None or older than _hmm_retrain_days
+            needs_retrain = (
+                self._hmm_model is None
+                or self._hmm_last_trained is None
+                or (datetime.now() - self._hmm_last_trained).days >= self._hmm_retrain_days
+            )
+            if needs_retrain:
                 model = GaussianHMM(
                     n_components=3, covariance_type="full",
                     n_iter=100, random_state=42,
                 )
                 model.fit(returns)
                 self._hmm_model = model
+                self._hmm_last_trained = datetime.now()
+                logger.debug("[regime] HMM model (re)trained")
 
             hidden_states = self._hmm_model.predict(returns)
             current_state = int(hidden_states[-1])

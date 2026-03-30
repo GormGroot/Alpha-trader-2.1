@@ -110,7 +110,7 @@ def build_ensemble_features(
     high_14 = high.rolling(14).max()
     denom = high_14 - low_14
     df["stoch_k"] = np.where(denom > 0, (close - low_14) / denom * 100, 50.0)
-    df["stoch_d"] = pd.Series(df["stoch_k"]).rolling(3).mean()
+    df["stoch_d"] = df["stoch_k"].rolling(3).mean()
 
     # Average True Range (14 dage) som pct af pris
     tr1 = high - low
@@ -368,8 +368,9 @@ class EnsembleMLStrategy(BaseStrategy):
         y_train, y_test = y.iloc[:n_train], y.iloc[n_train:]
 
         # Erstat NaN med median (robust for alle modeller)
-        X_train_clean = X_train.fillna(X_train.median())
-        X_test_clean = X_test.fillna(X_train.median())
+        self._train_medians = X_train.median()
+        X_train_clean = X_train.fillna(self._train_medians)
+        X_test_clean = X_test.fillna(self._train_medians)
 
         logger.info(
             f"[Ensemble] Træner 3 modeller: {n_train} train / {n_test} test, "
@@ -399,7 +400,6 @@ class EnsembleMLStrategy(BaseStrategy):
                 subsample=0.8,
                 colsample_bytree=0.8,
                 scale_pos_weight=1.0,
-                use_label_encoder=False,
                 eval_metric="logloss",
                 random_state=42,
                 verbosity=0,
@@ -426,7 +426,6 @@ class EnsembleMLStrategy(BaseStrategy):
 
         self._lr_model = LogisticRegression(
             C=0.1,
-            l1_ratio=0,
             max_iter=1000,
             class_weight="balanced",
             random_state=42,
@@ -495,10 +494,8 @@ class EnsembleMLStrategy(BaseStrategy):
                 [float(x) for x in self._xgb_model.feature_importances_],
             ))
         else:
-            xgb_importance = dict(zip(
-                self._feature_columns,
-                [float(x) for x in self._xgb_model.feature_importances_],
-            ))
+            # XGBoost not available — zero out its feature importance
+            xgb_importance = dict.fromkeys(self._feature_columns, 0.0)
 
         lr_importance = dict(zip(
             self._feature_columns,
@@ -514,11 +511,10 @@ class EnsembleMLStrategy(BaseStrategy):
         total_imp = sum(avg_importance.values()) or 1.0
         avg_importance = {k: v / total_imp for k, v in avg_importance.items()}
 
-        # Agreement rate
+        # Agreement rate (unanimous only: all 3 agree)
         agreements = sum(
             1 for i in range(len(rf_pred))
-            if (rf_pred[i] + xgb_pred[i] + lr_pred[i]) in (0, 3)  # alle enige
-            or abs(rf_pred[i] + xgb_pred[i] + lr_pred[i] - 1.5) >= 0.5  # 2/3 enige
+            if (rf_pred[i] + xgb_pred[i] + lr_pred[i]) in (0, 3)
         )
         agreement_rate = agreements / len(rf_pred) if len(rf_pred) > 0 else 0.0
 
@@ -556,11 +552,10 @@ class EnsembleMLStrategy(BaseStrategy):
 
     # ── Majority Voting ────────────────────────────────────────
 
-    @staticmethod
-    def _majority_vote(*predictions) -> np.ndarray:
-        """Majority voting: returner 1 hvis ≥2 af 3 siger 1."""
+    def _majority_vote(self, *predictions) -> np.ndarray:
+        """Majority voting: returner 1 hvis ≥min_agreement modeller siger 1."""
         stacked = np.column_stack(predictions)
-        return (stacked.sum(axis=1) >= 2).astype(int)
+        return (stacked.sum(axis=1) >= self.min_agreement).astype(int)
 
     # ── Analyse (prediktion) ──────────────────────────────────
 
@@ -575,13 +570,23 @@ class EnsembleMLStrategy(BaseStrategy):
         Alle 3 modeller stemmer. Kun hvis ≥ min_agreement er enige
         OG gennemsnitlig sandsynlighed > confidence_min, gives signal.
 
+        Note: regime_score defaults to 0.0 when not provided, matching
+        the default used during training. This avoids train/inference
+        feature mismatch when SignalEngine calls analyze() without
+        passing regime_score.
+
         Args:
             df: OHLCV DataFrame.
-            regime_score: Valgfri regime-score.
+            regime_score: Valgfri regime-score (default 0.0 = neutral).
 
         Returns:
             StrategyResult med BUY/SELL/HOLD.
         """
+        # Ensure regime_score is always a float to avoid train/inference mismatch
+        # (SignalEngine does not pass regime_score, so it arrives as None)
+        if regime_score is None:
+            regime_score = 0.0
+
         if not self._is_trained:
             return StrategyResult(Signal.HOLD, 0, "Ensemble ikke trænet – kald train() først")
 
@@ -591,7 +596,7 @@ class EnsembleMLStrategy(BaseStrategy):
         # Byg features
         feat_df = build_ensemble_features(df, regime_score=regime_score)
         latest = feat_df[self._feature_columns].iloc[[-1]].copy()
-        latest_clean = latest.fillna(0)
+        latest_clean = latest.fillna(self._train_medians if hasattr(self, '_train_medians') else 0)
 
         # Hent votes fra alle modeller
         votes = self._get_votes(latest_clean)
@@ -929,10 +934,10 @@ class EnsembleMLStrategy(BaseStrategy):
             except Exception:
                 positions.append(0)
 
-        # Beregn returns
+        # Beregn returns (position[i] earns next-day return to avoid look-ahead bias)
         ml_daily = []
-        for i in range(len(daily_returns)):
-            ml_daily.append(positions[i] * daily_returns[i])
+        for i in range(len(daily_returns) - 1):
+            ml_daily.append(positions[i] * daily_returns[i + 1])
 
         ml_daily = np.array(ml_daily) if ml_daily else np.array([0.0])
         total_return = float(np.prod(1 + ml_daily) - 1)

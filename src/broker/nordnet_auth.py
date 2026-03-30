@@ -256,7 +256,14 @@ class NordnetSession:
             self._last_activity = datetime.now()
 
             if response.status_code == 401:
-                # Session expired — re-login
+                # Session expired — re-login (with guard against infinite recursion)
+                now = datetime.now()
+                last_relogin = getattr(self, '_last_relogin_attempt', None)
+                if last_relogin and (now - last_relogin) < timedelta(seconds=30):
+                    raise NordnetAuthError(
+                        "Nordnet 401 re-login failed — last attempt was less than 30s ago"
+                    )
+                self._last_relogin_attempt = now
                 logger.info("[nordnet] 401 — re-logger ind...")
                 self._logged_in = False
                 self.login()

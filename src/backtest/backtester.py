@@ -25,6 +25,7 @@ import gc
 from config.settings import settings
 from src.data.indicators import add_all_indicators
 from src.data.market_data import MarketDataFetcher
+from src.fees.fee_calculator import FeeCalculator
 from src.strategy.base_strategy import BaseStrategy, Signal
 
 
@@ -255,23 +256,32 @@ class Backtester:
         end: str | None = None,
         initial_capital: float | None = None,
         commission_pct: float | None = None,
-        spread_pct: float = 0.0005,
+        spread_pct: float | None = None,
         max_position_pct: float | None = None,
         market_data: MarketDataFetcher | None = None,
+        broker: str = "paper",
     ) -> None:
         self.strategy = strategy
         self.symbols = [s.upper() for s in (symbols or settings.trading.symbols)]
         self.start = start or settings.backtest.start_date
         self.end = end or settings.backtest.end_date
         self.initial_capital = initial_capital or settings.backtest.initial_capital
+        self.max_position_pct = max_position_pct or settings.risk.max_position_pct
+        self._market_data = market_data or MarketDataFetcher()
+
+        # Fee calculator — uses realistic per-symbol fees when no override given
+        self._fee_calc = FeeCalculator(broker=broker)
+        self._override_commission = commission_pct
+        self._override_spread = spread_pct
+
+        # Legacy fallback: if explicit pct given, use flat rates (old behaviour)
         self.commission_pct = (
             commission_pct
             if commission_pct is not None
             else settings.backtest.commission_pct
         )
-        self.spread_pct = spread_pct
-        self.max_position_pct = max_position_pct or settings.risk.max_position_pct
-        self._market_data = market_data or MarketDataFetcher()
+        self.spread_pct = spread_pct if spread_pct is not None else 0.0005
+        self._use_realistic_fees = (commission_pct is None and spread_pct is None)
 
     def run(self) -> BacktestResult:
         """Kør backtesten og returnér resultater."""
@@ -410,9 +420,18 @@ class Backtester:
                 # ── EXIT: Sælg hvis vi har position og signal=SELL ──
                 if symbol in positions and result.signal == Signal.SELL:
                     pos = positions.pop(symbol)
-                    sell_price = close_price * (1 - self.spread_pct)
+                    if self._use_realistic_fees:
+                        spread = self._fee_calc.get_spread_pct(symbol)
+                    else:
+                        spread = self.spread_pct
+                    sell_price = close_price * (1 - spread)
                     proceeds = pos["qty"] * sell_price
-                    commission = proceeds * self.commission_pct
+
+                    if self._use_realistic_fees:
+                        fee = self._fee_calc.calculate(symbol, "sell", pos["qty"], sell_price)
+                        commission = fee.total
+                    else:
+                        commission = proceeds * self.commission_pct
                     cash += proceeds - commission
 
                     trades.append(
@@ -434,7 +453,11 @@ class Backtester:
                 elif symbol not in positions and result.signal == Signal.BUY:
                     # Position sizing
                     budget = equity * self.max_position_pct
-                    buy_price = close_price * (1 + self.spread_pct)
+                    if self._use_realistic_fees:
+                        spread = self._fee_calc.get_spread_pct(symbol)
+                    else:
+                        spread = self.spread_pct
+                    buy_price = close_price * (1 + spread)
 
                     if buy_price <= 0:
                         continue
@@ -446,7 +469,11 @@ class Backtester:
                         continue
 
                     cost = max_qty * buy_price
-                    commission = cost * self.commission_pct
+                    if self._use_realistic_fees:
+                        fee = self._fee_calc.calculate(symbol, "buy", max_qty, buy_price)
+                        commission = fee.total
+                    else:
+                        commission = cost * self.commission_pct
                     if cost + commission > cash:
                         continue
 
@@ -467,9 +494,18 @@ class Backtester:
             else:
                 close_price = pos["entry_price"]
 
-            sell_price = close_price * (1 - self.spread_pct)
+            if self._use_realistic_fees:
+                spread = self._fee_calc.get_spread_pct(symbol)
+            else:
+                spread = self.spread_pct
+            sell_price = close_price * (1 - spread)
             proceeds = pos["qty"] * sell_price
-            commission = proceeds * self.commission_pct
+
+            if self._use_realistic_fees:
+                fee = self._fee_calc.calculate(symbol, "sell", pos["qty"], sell_price)
+                commission = fee.total
+            else:
+                commission = proceeds * self.commission_pct
             cash += proceeds - commission
 
             trades.append(

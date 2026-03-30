@@ -222,9 +222,10 @@ class StrategyComparison:
         end: str | None = None,
         initial_capital: float = 100_000,
         benchmark_symbol: str = "SPY",
-        commission_pct: float = 0.001,
-        spread_pct: float = 0.0005,
+        commission_pct: float | None = None,
+        spread_pct: float | None = None,
         market_data: MarketDataFetcher | None = None,
+        broker: str = "paper",
     ) -> None:
         self.strategies = strategies
         self.symbols = symbols
@@ -234,6 +235,7 @@ class StrategyComparison:
         self.benchmark_symbol = benchmark_symbol
         self.commission_pct = commission_pct
         self.spread_pct = spread_pct
+        self.broker = broker
         self._market_data = market_data or MarketDataFetcher()
 
     def run(self) -> ComparisonReport:
@@ -251,6 +253,7 @@ class StrategyComparison:
                 commission_pct=self.commission_pct,
                 spread_pct=self.spread_pct,
                 market_data=self._market_data,
+                broker=self.broker,
             )
             result = bt.run()
             results.append(result)

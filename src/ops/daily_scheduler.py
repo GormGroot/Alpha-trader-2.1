@@ -570,24 +570,135 @@ def _weekend_rotation_check() -> dict:
                 )
                 return {"skipped": True, "reason": "exchanges_still_open", "open": still_open}
 
-        # All done — activate weekend mode
+        # All done — request user approval before activating
         crypto_alloc_pct = cfg.get("crypto_allocation_pct", 60)
         close_stocks = cfg.get("close_stocks", True)
         close_futures = cfg.get("close_futures", True)
 
-        trader.set_weekend_mode(True, crypto_alloc_pct, close_stocks, close_futures)
-
         reopen_date, reopen_time, first_market = get_earliest_reopen(today)
-        logger.info(
-            f"[scheduler] Weekend rotation ACTIVATED — "
-            f"crypto target={crypto_alloc_pct}%, "
-            f"first reopen: {first_market} on {reopen_date} at {reopen_time.strftime('%H:%M')} CET"
+        reopen_info = f"{first_market} {reopen_date} {reopen_time.strftime('%H:%M')} CET"
+
+        from src.ops.weekend_approval import (
+            get_approval_state, request_approval, is_pending, is_approved, is_rejected,
         )
-        return {
-            "weekend_mode": True,
-            "trigger": "all_exchanges_closed",
-            "reopen": f"{first_market} {reopen_date} {reopen_time.strftime('%H:%M')}",
-        }
+
+        approval = get_approval_state()
+        status = approval.get("status")
+
+        if status == "approved":
+            # User approved — activate weekend mode
+            trader.set_weekend_mode(True, crypto_alloc_pct, close_stocks, close_futures)
+            logger.info(
+                f"[scheduler] Weekend rotation ACTIVATED (user approved) — "
+                f"crypto target={crypto_alloc_pct}%, "
+                f"first reopen: {reopen_info}"
+            )
+            return {
+                "weekend_mode": True,
+                "trigger": "user_approved",
+                "reopen": reopen_info,
+            }
+
+        elif status == "rejected":
+            logger.info("[scheduler] Weekend rotation SKIPPED — user rejected")
+            return {"skipped": True, "reason": "user_rejected"}
+
+        elif status == "pending":
+            # Still waiting for user response
+            return {"skipped": True, "reason": "awaiting_approval"}
+
+        else:
+            # No request yet — calculate fees and request approval
+            from src.fees.fee_calculator import FeeCalculator, get_exchange_for_symbol
+
+            fee_calc = FeeCalculator(broker="paper")
+            positions_to_close = []
+            estimated_close_fees = 0.0
+
+            if hasattr(trader, "_portfolio") and hasattr(trader._portfolio, "positions"):
+                for sym, pos in trader._portfolio.positions.items():
+                    is_crypto = sym.endswith("-USD")
+                    is_future = "=F" in sym
+                    if is_crypto:
+                        continue
+                    if is_future and not close_futures:
+                        continue
+                    if not is_future and not close_stocks:
+                        continue
+                    price = getattr(pos, "current_price", None) or getattr(pos, "entry_price", 0)
+                    qty = getattr(pos, "qty", 0)
+                    fee = fee_calc.calculate(sym, "sell", qty, price)
+                    estimated_close_fees += fee.total
+                    positions_to_close.append({
+                        "symbol": sym,
+                        "qty": qty,
+                        "price": price,
+                        "close_fee": round(fee.total, 2),
+                        "exchange": get_exchange_for_symbol(sym),
+                    })
+
+            # Estimate crypto entry fees (based on allocation)
+            portfolio_value = getattr(trader._portfolio, "total_equity", 100000)
+            crypto_budget = portfolio_value * (crypto_alloc_pct / 100.0)
+            crypto_symbols = [s for s in MARKET_SYMBOLS.get("crypto", []) if s.endswith("-USD")][:4]
+            estimated_crypto_entry = 0.0
+            per_crypto = crypto_budget / max(1, len(crypto_symbols))
+            for sym in crypto_symbols:
+                fee = fee_calc.calculate(sym, "buy", 1, per_crypto)
+                # Scale: fee was for qty=1 at full budget, recalc properly
+                fee = fee_calc.calculate(sym, "buy", per_crypto / 100, 100)  # approximate
+                estimated_crypto_entry += fee.total
+
+            # Better estimate: use pct-based fee directly
+            crypto_fee_schedule = fee_calc.get_fee_schedule("BTC-USD")
+            crypto_comm_pct = crypto_fee_schedule.get("commission_pct", 0.001)
+            crypto_spread_pct = crypto_fee_schedule.get("spread_pct", 0.001)
+            estimated_crypto_entry = crypto_budget * (crypto_comm_pct + crypto_spread_pct)
+            # Same fees for exit on Monday
+            estimated_crypto_exit = estimated_crypto_entry
+
+            total_estimated = estimated_close_fees + estimated_crypto_entry + estimated_crypto_exit
+
+            request_approval(
+                estimated_fees=round(total_estimated, 2),
+                crypto_allocation_pct=crypto_alloc_pct,
+                positions_to_close=positions_to_close,
+                crypto_symbols=crypto_symbols,
+                reopen_info=reopen_info,
+            )
+
+            # Send notification
+            try:
+                from src.notifications.notifier import Notifier
+                notifier = Notifier()
+                notifier.send(
+                    severity="WARNING",
+                    title="Weekend Crypto Rollover — godkendelse kræves",
+                    message=(
+                        f"Alle børser er lukket. Weekend crypto-rotation er klar.\n\n"
+                        f"Estimerede ekstra gebyrer: ${total_estimated:,.2f}\n"
+                        f"  - Lukning af {len(positions_to_close)} positioner: ${estimated_close_fees:,.2f}\n"
+                        f"  - Crypto entry (køb): ${estimated_crypto_entry:,.2f}\n"
+                        f"  - Crypto exit (mandag): ${estimated_crypto_exit:,.2f}\n\n"
+                        f"Crypto allokering: {crypto_alloc_pct}% af portefølje\n"
+                        f"Næste åbning: {reopen_info}\n\n"
+                        f"Godkend eller afvis i dashboardet under Rapporter."
+                    ),
+                    category="weekend_rotation",
+                )
+            except Exception as e:
+                logger.warning(f"[scheduler] Could not send weekend approval notification: {e}")
+
+            logger.info(
+                f"[scheduler] Weekend rotation PENDING — estimated fees: ${total_estimated:,.2f}, "
+                f"awaiting user approval in dashboard"
+            )
+            return {
+                "skipped": True,
+                "reason": "approval_requested",
+                "estimated_fees": total_estimated,
+                "positions_to_close": len(positions_to_close),
+            }
 
     # ── DEACTIVATE: before first exchange reopens ────────────────
     if weekend_active:
@@ -603,6 +714,9 @@ def _weekend_rotation_check() -> dict:
 
         if now >= restore_dt:
             trader.set_weekend_mode(False)
+            # Clear approval state for next weekend
+            from src.ops.weekend_approval import clear as _clear_approval
+            _clear_approval()
             logger.info(
                 f"[scheduler] Weekend rotation DEACTIVATED — "
                 f"{first_market} opens {reopen_date} at {reopen_time.strftime('%H:%M')} CET"

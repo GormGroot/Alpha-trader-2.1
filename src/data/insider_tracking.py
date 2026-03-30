@@ -48,7 +48,7 @@ SEC_EDGAR_FILINGS = "https://efts.sec.gov/LATEST/search-index"
 SEC_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index"
 
 # User-Agent krævet af SEC (brug firmanavn + email)
-SEC_USER_AGENT = "AlphaVisionPlatform/1.0 (contact@alphavision.dk)"
+SEC_USER_AGENT = "AlphaTradingPlatform/1.0 (https://github.com/alpha-trading-platform)"
 
 # Rate limiting: SEC tillader 10 req/s, vi bruger 0.12s gap
 _MIN_SEC_REQUEST_GAP = 0.12

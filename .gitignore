@@ -37,3 +37,14 @@ data_cache/
 backups/
 *.tar.gz
 .claude/
+
+# Financial data & reports
+reports/
+diagnostics/
+data/cache/
+*.db
+*.bak
+*.bak2
+*.backup
+.saxo_tokens
+dump.txt
